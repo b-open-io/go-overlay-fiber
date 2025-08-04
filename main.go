@@ -10,11 +10,12 @@ import (
 func main() {
 	// Example configuration - in production, these would come from environment variables
 	srv := server.NewOverlayServer("go-overlay-fiber", "example-private-key", "localhost").
-		ConfigurePort(3001).
+		ConfigurePort(3002).
 		ConfigureNetwork("test").
 		ConfigureVerboseLogging(true).
 		ConfigureGASPSync(true).
-		ConfigureAdminToken("admin-token-123")
+		ConfigureAdminToken("admin-token-123").
+		ConfigureEngine("http://localhost:3002")
 
 	if err := srv.Start(); err != nil {
 		log.Fatal("Failed to start server:", err)
