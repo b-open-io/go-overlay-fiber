@@ -1,531 +1,416 @@
 # Go Overlay Fiber Implementation Plan
 
 ## Overview
-This document outlines the implementation plan for porting the exact functionality from `overlay-express` to Go using the Fiber web framework. Based on a comprehensive code review, the current implementation provides an excellent foundation but is missing most core functionality.
+This document outlines the complete implementation plan for achieving full feature parity with `overlay-express` in Go using the Fiber web framework. After comprehensive analysis of both codebases, this plan focuses on systematic implementation of missing components and functionality.
 
-**Current Status: 2/5 - Good foundation, but most core functionality missing**
+## Current State Analysis
 
-**Strengths:**
-- Excellent architecture with clean fluent API design
-- Good database configuration (SQL + MongoDB)
-- Modern Go patterns with Fiber framework
-- Proper error handling and middleware
+### What Works ✅
+- **Foundation Architecture**: OverlayServer struct with proper configuration methods
+- **Database Integration**: SQL and MongoDB connections with health checks
+- **HTTP Server**: Fiber app with middleware (CORS, logging, recovery, admin auth)
+- **Route Structure**: All 13+ routes defined with proper middleware protection
+- **Configuration Methods**: Most basic config methods implemented (port, network, databases)
 
-**Critical Issues:**
-1. **Engine integration incomplete** - missing storage, chain tracker, topic managers
-2. **Core routes are placeholders** - `/submit`, `/lookup`, `/arc-ingest` don't work
-3. **Missing configuration methods** - no topic managers, lookup services, chain tracker
-4. **GASP sync not implemented** - all sync endpoints are placeholders
+### Critical Gaps ❌
+- **Engine Integration**: Engine created but not properly configured with storage/services
+- **Core Route Logic**: All routes return placeholders instead of real functionality
+- **Storage Layer**: Missing KnexStorage equivalent from go-overlay-services
+- **Service Auto-configuration**: No SHIP/SLAP topic managers or lookup services
+- **TaggedBEEF Processing**: Submit endpoint doesn't process BSV transactions
+- **Web UI**: Returns JSON status instead of HTML interface like overlay-express
+- **Chain Tracker Integration**: Not connected to Engine or WhatsOnChain equivalent
 
-**Key Principles:**
-- Focus on direct porting from overlay-express (1:1 mapping)
-- Prioritize core functionality that exists in overlay-express
-- Remove any planned features not present in the original
-- Simplify phases to focus on direct porting
-- Address dependency gaps (storage, engine, discovery services)
+### Available Dependencies
+- `github.com/bsv-blockchain/go-overlay-services v0.1.1` - Engine, storage, topic managers
+- `github.com/bsv-blockchain/go-sdk v1.2.1` - TaggedBEEF, ChainTracker, ARC integration
+- Database drivers and Fiber framework - All working
 
-## Current Implementation Status
+## Feature Parity Analysis
 
-### What's Already Implemented (Foundation Complete)
-1. **OverlayServer Struct**: Constructor with name, privateKey, advertisableFQDN ✅
-2. **Basic Configuration Methods**: Port, logging, network, database connections ✅
-3. **Database Integration**: SQL (MySQL/PostgreSQL/SQLite) and MongoDB ✅
-4. **HTTP Server Setup**: Fiber app with middleware (CORS, logging, recovery) ✅
-5. **Route Structure**: All 13 routes defined but most are placeholders ✅
-6. **Admin Authentication**: Bearer token middleware implemented ✅
-7. **Error Handling**: Proper error response format ✅
+### Overlay-Express Core Features
+1. **Constructor & Configuration**: `new OverlayExpress(name, privateKey, fqdn)`
+2. **Database Setup**: `configureKnex()`, `configureMongo()`
+3. **Service Configuration**: `configureTopicManager()`, `configureLookupService()`
+4. **Engine Setup**: `configureEngine()` with auto SHIP/SLAP configuration
+5. **Web UI**: `makeUserInterface()` generates HTML documentation interface
+6. **Core Routes**: `/submit` (TaggedBEEF), `/lookup`, `/arc-ingest`, documentation endpoints
+7. **GASP Sync**: `/requestSyncResponse`, `/requestForeignGASPNode` if enabled
+8. **Admin Endpoints**: `/admin/syncAdvertisements`, `/admin/startGASPSync` with Bearer auth
+9. **Auto-configuration**: Automatic SHIP/SLAP topic managers and lookup services
+10. **Chain Integration**: WhatsOnChain for blockchain data, ARC for broadcasting
 
-### Critical Missing Components (From Code Review)
-1. **Storage Layer**: No KnexStorage equivalent integration
-2. **Topic Managers**: Configuration methods missing, no SHIP/SLAP setup
-3. **Lookup Services**: Configuration methods missing, no service integration
-4. **Chain Tracker**: No WhatsOnChain or chain tracking integration
-5. **TaggedBEEF Processing**: Submit endpoint is placeholder
-6. **Engine Integration**: Engine created but not properly configured with services
-7. **Discovery Services**: No SHIP/SLAP topic managers or lookup services
-8. **Web UI**: No makeUserInterface equivalent, just JSON status
-9. **Auto-configuration**: No automatic SHIP/SLAP service setup
+### Go Implementation Status
+- **Constructor & Configuration**: ✅ Complete - matches overlay-express API
+- **Database Setup**: ✅ Complete - supports same connection patterns
+- **Service Configuration**: ✅ Methods exist but need storage integration
+- **Engine Setup**: ⚠️  Partial - Engine created but missing storage/services
+- **Web UI**: ❌ Missing - returns JSON instead of HTML interface
+- **Core Routes**: ❌ Missing - all return placeholder responses
+- **GASP Sync**: ❌ Missing - placeholder endpoints only
+- **Admin Endpoints**: ❌ Missing - placeholder implementations
+- **Auto-configuration**: ❌ Missing - no SHIP/SLAP service setup
+- **Chain Integration**: ❌ Missing - ChainTracker not connected to Engine
 
-### Dependencies Status
+## Implementation Strategy
 
-**Available (Already in go.mod):**
-- `github.com/bsv-blockchain/go-overlay-services v0.1.1` - Engine available ✅
-- `github.com/bsv-blockchain/go-sdk v1.2.1` - BSV SDK functionality ✅
-- Database drivers (MySQL, PostgreSQL, SQLite, MongoDB) ✅
-- Fiber web framework and middleware ✅
+### Reuse vs Build Analysis
 
-**Missing Integration (Available but not used):**
-- Storage layer from go-overlay-services
-- Topic managers and lookup services from go-overlay-services
-- Chain tracker from go-sdk
-- TaggedBEEF processing from go-sdk
-- SHIP/SLAP discovery services
+**Available for Reuse (go-overlay-services v0.1.1):**
+- Engine core functionality
+- Storage interfaces and implementations
+- Topic manager interfaces and SHIP/SLAP implementations
+- Lookup service interfaces and implementations
+- Advertisement and sync functionality
 
-**TypeScript to Go Mapping (Confirmed Available):**
-- Engine → `github.com/bsv-blockchain/go-overlay-services/pkg/core/engine`
-- TaggedBEEF → `github.com/bsv-blockchain/go-sdk` 
-- ChainTracker/WhatsOnChain → `github.com/bsv-blockchain/go-sdk`
-- ARC → `github.com/bsv-blockchain/go-sdk`
-- SHIP/SLAP services → `github.com/bsv-blockchain/go-overlay-services`
+**Available for Reuse (go-sdk v1.2.1):**
+- TaggedBEEF parsing and processing
+- Chain tracking (WhatsOnChain equivalent)
+- ARC integration for transaction broadcasting
+- BSV transaction handling and validation
 
-## Missing Configuration Methods (Critical Gap)
+**Must Implement from Scratch:**
+- Web UI HTML generation (makeUserInterface equivalent)
+- Route handler logic connecting to Engine methods
+- Auto-configuration logic for SHIP/SLAP services
+- Migration handling and database schema setup
+- Error handling and response formatting to match overlay-express
 
-The current implementation is missing these essential configuration methods from overlay-express:
+**Import Strategy:**
+```go
+// Core engine and interfaces
+"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
+"github.com/bsv-blockchain/go-overlay-services/pkg/interfaces"
+"github.com/bsv-blockchain/go-overlay-services/pkg/storage"
 
-**Topic Manager Configuration:**
-- `ConfigureTopicManager(name string, manager interface{})`
-- Auto-configuration of SHIP/SLAP topic managers
+// Discovery services (SHIP/SLAP)
+"github.com/bsv-blockchain/go-overlay-services/pkg/discovery/ship"
+"github.com/bsv-blockchain/go-overlay-services/pkg/discovery/slap"
 
-**Lookup Service Configuration:**
-- `ConfigureLookupService(name string, service interface{})`
-- `ConfigureLookupServiceWithKnex(name string, factory func(*sql.DB) (interface{}, []Migration))`
-- `ConfigureLookupServiceWithMongo(name string, factory func(*mongo.Database) interface{})`
+// BSV blockchain integration
+"github.com/bsv-blockchain/go-sdk/transaction"
+"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
+"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
+```
 
-**Chain Tracker Configuration:**
-- `ConfigureChainTracker(chainTracker interface{})`
-- Integration with WhatsOnChain equivalent
+## Implementation Phases
 
-**Engine Parameters:**
-- `ConfigureEngineParams(params EngineConfig)`
-- Advanced engine configuration options
+### Phase 1: Core Engine Integration (Priority 1)
+**Goal**: Replace placeholder engine with fully configured, working engine
 
-**Web UI Configuration:**
-- `ConfigureWebUI(config UIConfig)`
-- Static HTML interface generation
+**Tasks:**
+1. **Storage Integration**
+   - Import and configure KnexStorage equivalent from go-overlay-services
+   - Connect SQL database to Engine storage
+   - Handle database migrations like overlay-express
+   - Configure MongoDB storage for lookup services
 
-**Storage Integration:**
-- Engine storage configuration with KnexStorage equivalent
-- Migration handling
+2. **Engine Configuration**
+   - Properly initialize Engine with storage, managers, services
+   - Configure broadcaster (ARC) and advertiser components
+   - Set up chain tracker integration
+   - Apply EngineConfig parameters
 
-## Project Structure (Minimal)
+3. **Service Registration**
+   - Connect configured topic managers to Engine
+   - Connect configured lookup services to Engine
+   - Ensure proper service lifecycle management
+
+**Deliverable**: Engine properly initialized and connected to databases
+
+### Phase 2: Core Route Implementation (Priority 1)
+**Goal**: Implement actual functionality for core overlay operations
+
+**Tasks:**
+1. **Submit Endpoint (`/submit`)**
+   - Parse x-topics header
+   - Process TaggedBEEF from request body
+   - Call Engine.submit() with proper parameters
+   - Return transaction ID and status
+
+2. **Lookup Endpoint (`/lookup`)**
+   - Parse lookup request body
+   - Call Engine.lookup() with request parameters
+   - Return lookup results in overlay-express format
+
+3. **Documentation Endpoints**
+   - `/listTopicManagers` → Engine.listTopicManagers()
+   - `/listLookupServiceProviders` → Engine.listLookupServiceProviders()
+   - `/getDocumentationForTopicManager` → Engine.getDocumentationForTopicManager()
+   - `/getDocumentationForLookupServiceProvider` → Engine.getDocumentationForLookupServiceProvider()
+
+4. **ARC Integration (`/arc-ingest`)**
+   - Parse merklePath from request
+   - Call Engine.handleNewMerkleProof()
+   - Handle ARC webhook callbacks
+
+**Deliverable**: Core overlay functionality working end-to-end
+
+### Phase 3: Auto-Configuration (Priority 2)
+**Goal**: Match overlay-express automatic service setup
+
+**Tasks:**
+1. **SHIP/SLAP Auto-Configuration**
+   - Auto-configure SHIP topic manager when ConfigureEngine() called
+   - Auto-configure SLAP topic manager when ConfigureEngine() called
+   - Auto-configure SHIP lookup service with MongoDB
+   - Auto-configure SLAP lookup service with MongoDB
+   - Match overlay-express configureEngine() logic exactly
+
+2. **Migration Management**
+   - Implement migration runner for SQL schemas
+   - Include overlay service migrations (KnexStorageMigrations equivalent)
+   - Handle migration failures gracefully
+
+3. **Sync Configuration**
+   - Configure GASP sync based on EnableGASPSync setting
+   - Set up sync configuration for auto-configured services
+   - Enable/disable sync per service as needed
+
+**Deliverable**: Zero-config setup like overlay-express with automatic SHIP/SLAP
+
+### Phase 4: GASP Sync Implementation (Priority 2)
+**Goal**: Implement peer synchronization functionality
+
+**Tasks:**
+1. **Sync Response Endpoint (`/requestSyncResponse`)**
+   - Parse x-bsv-topic header
+   - Call Engine.provideForeignSyncResponse()
+   - Handle cross-node synchronization
+
+2. **Foreign Node Endpoint (`/requestForeignGASPNode`)**
+   - Parse request body {graphID, txid, outputIndex}
+   - Call Engine.provideForeignGASPNode()
+   - Return node data for GASP network
+
+3. **Admin Sync Endpoints**
+   - `/admin/syncAdvertisements` → Engine.syncAdvertisements()
+   - `/admin/startGASPSync` → Engine.startGASPSync()
+   - `/admin/evictOutpoint` → call outputEvicted on relevant services
+
+**Deliverable**: Full GASP synchronization capability
+
+### Phase 5: Web UI Implementation (Priority 3)
+**Goal**: Replace JSON responses with HTML documentation interface
+
+**Tasks:**
+1. **HTML Interface Generation**
+   - Port makeUserInterface() logic from overlay-express
+   - Generate dynamic HTML based on configured services
+   - Include JavaScript for interactive documentation
+   - Support custom styling via UIConfig
+
+2. **Documentation Integration**
+   - Show topic manager documentation in web interface
+   - Show lookup service documentation in web interface
+   - Display service status and health information
+   - Include API endpoint documentation
+
+3. **Branding and Customization**
+   - Support UIConfig styling options
+   - Custom colors, fonts, favicon
+   - Additional custom CSS styles
+   - Configurable content sections
+
+**Deliverable**: Full-featured web documentation interface like overlay-express
+
+## Technical Implementation Details
+
+### Package Structure (Maintain Current)
 ```
 go-overlay-fiber/
-├── main.go                 # Single file implementation
-├── go.mod                  # Go module definition
-├── go.sum                  # Go module checksums
-└── IMPLEMENTATION_PLAN.md  # This file
+├── examples/basic/         # Example usage
+├── pkg/server/            # Core server implementation
+│   ├── server.go          # Main OverlayServer struct and methods
+│   └── interfaces.go      # Type definitions and interfaces
+├── go.mod                 # Dependencies
+├── go.sum                 # Dependency checksums
+└── IMPLEMENTATION_PLAN.md # This document
 ```
 
-### Core Components
+### Key Implementation Patterns
 
-## Core Structure (Direct Port from OverlayExpress.ts)
-
-### OverlayExpress Struct
+**1. Storage Integration Pattern**
 ```go
-// Direct port of OverlayExpress class properties
-type OverlayExpress struct {
-    // Required constructor parameters (exact match)
-    Name               string
-    PrivateKey         string
-    AdvertisableFQDN   string
-    adminToken         string  // private, generated if not provided
+// Phase 1: Configure Engine with proper storage
+func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) error {
+    // Create KnexStorage equivalent from go-overlay-services
+    storage, err := storage.NewKnexStorage(s.DB, s.MongoDB)
+    if err != nil {
+        return err
+    }
     
-    // Configuration properties (exact match from TS)
-    App                *fiber.App
-    Port               int                    // default: 3000
-    Logger             interface{}            // default: console equivalent
-    Knex               *sql.DB                // SQL database connection
-    MigrationsToRun    []Migration           // migrations array
-    MongoDb            *mongo.Database        // MongoDB database
-    Network            string                // "main" or "test", default: "main"
-    ChainTracker       interface{}           // ChainTracker or "scripts only"
-    Engine             interface{}           // Overlay Engine (from go-overlay-services)
-    Managers           map[string]interface{} // Topic Managers
-    Services           map[string]interface{} // Lookup Services
-    EnableGASPSync     bool                  // default: true
-    ArcApiKey          string                // optional ARC API key
-    VerboseRequestLogging bool               // default: false
-    WebUIConfig        UIConfig              // Web UI configuration
-    EngineConfig       EngineConfig          // Advanced engine parameters
-}
-
-// Supporting types (port from TypeScript)
-type Migration struct {
-    Name string
-    Up   func(db *sql.DB) error
-    Down func(db *sql.DB) error  // optional
-}
-
-type UIConfig struct {
-    Host                     string
-    FaviconUrl              string
-    BackgroundColor         string
-    PrimaryColor            string
-    SecondaryColor          string
-    FontFamily              string
-    HeadingFontFamily       string
-    AdditionalStyles        string
-    SectionBackgroundColor  string
-    PrimaryTextColor        string
-    LinkColor               string
-    HoverColor              string
-    BorderColor             string
-    SecondaryBackgroundColor string
-    SecondaryTextColor      string
-    DefaultContent          string
-}
-
-type EngineConfig struct {
-    ChainTracker                    interface{}
-    ShipTrackers                   []string
-    SlapTrackers                   []string
-    Broadcaster                    interface{}
-    Advertiser                     interface{}
-    SyncConfiguration              map[string]interface{} // string[] | "SHIP" | false
-    LogTime                        *bool
-    LogPrefix                      string
-    ThrowOnBroadcastFailure        *bool
-    OverlayBroadcastFacilitator    interface{}
-    SuppressDefaultSyncAdvertisements *bool
+    // Create Engine with storage
+    engineConfig := &engine.Config{
+        Storage: storage,
+        HostingURL: s.AdvertisableFQDN,
+        // ... other config
+    }
+    
+    s.Engine, err = engine.New(engineConfig)
+    if err != nil {
+        return err
+    }
+    
+    // Auto-configure SHIP/SLAP if requested (like overlay-express)
+    if autoConfigureShipSlap {
+        s.autoConfigureDiscoveryServices()
+    }
+    
+    return nil
 }
 ```
 
-### Configuration Methods (Exact Port from OverlayExpress.ts)
-
-**Required methods (exact match from TypeScript):**
-- `ConfigurePort(port int)`
-- `ConfigureWebUI(config UIConfig)`
-- `ConfigureLogger(logger interface{})`
-- `ConfigureNetwork(network string)` // "main" or "test"
-- `ConfigureChainTracker(chainTracker interface{})`
-- `ConfigureArcApiKey(apiKey string)`
-- `configureEnableGASPSync(enable bool)`
-- `ConfigureVerboseRequestLogging(enable bool)`
-- `ConfigureKnex(config interface{})` // Knex.Config or connection string
-- `ConfigureMongo(connectionString string)`
-- `ConfigureTopicManager(name string, manager interface{})`
-- `ConfigureLookupService(name string, service interface{})`
-- `ConfigureLookupServiceWithKnex(name string, serviceFactory func(*sql.DB) (interface{}, []Migration))`
-- `ConfigureLookupServiceWithMongo(name string, serviceFactory func(*mongo.Database) interface{})`
-- `ConfigureEngineParams(params EngineConfig)`
-- `ConfigureEngine(autoConfigureShipSlap bool)` // default: true
-- `GetAdminToken() string`
-
-### HTTP Routes (Exact Port from OverlayExpress.ts)
-
-**Public Routes (11 total):**
-1. `GET /` - Serve static HTML UI (calls makeUserInterface)
-2. `GET /listTopicManagers` - Call engine.listTopicManagers()
-3. `GET /listLookupServiceProviders` - Call engine.listLookupServiceProviders()
-4. `GET /getDocumentationForTopicManager?manager=X` - Call engine.getDocumentationForTopicManager()
-5. `GET /getDocumentationForLookupServiceProvider?lookupService=X` - Call engine.getDocumentationForLookupServiceProvider()
-6. `POST /submit` - Parse x-topics header, construct TaggedBEEF, call engine.submit()
-7. `POST /lookup` - Call engine.lookup(req.body)
-8. `POST /arc-ingest` - Only if arcApiKey set, parse merklePath, call engine.handleNewMerkleProof()
-
-**GASP Sync Routes (if enableGASPSync is true):**
-9. `POST /requestSyncResponse` - Parse x-bsv-topic header, call engine.provideForeignSyncResponse()
-10. `POST /requestForeignGASPNode` - Parse body {graphID, txid, outputIndex}, call engine.provideForeignGASPNode()
-
-**Admin Routes (Bearer token protected, 3 total):**
-11. `POST /admin/syncAdvertisements` - Call engine.syncAdvertisements()
-12. `POST /admin/startGASPSync` - Call engine.startGASPSync()
-13. `POST /admin/evictOutpoint` - Call service.outputEvicted() or all services
-
-**404 Handler:**
-- Return JSON error for unmatched routes
-
-**Middleware (exact port):**
-- Body parser (JSON 1GB limit, raw octet-stream 1GB)
-- Verbose request logging (if enabled)
-- CORS headers (Access-Control-Allow-*)
-- Admin auth middleware (Bearer token check)
-
-### Service Integration (Auto-configure from OverlayExpress.ts)
-
-**Auto-configuration in configureEngine() (if autoConfigureShipSlap = true):**
+**2. Route Implementation Pattern**
 ```go
-// Auto-configure SHIP and SLAP services (lines 358-366 in TS)
-oe.ConfigureTopicManager("tm_ship", NewSHIPTopicManager())  // from go-overlay-services
-oe.ConfigureTopicManager("tm_slap", NewSLAPTopicManager())  // from go-overlay-services
-oe.ConfigureLookupServiceWithMongo("ls_ship", func(db *mongo.Database) interface{} {
-    return NewSHIPLookupService(NewSHIPStorage(db))  // from go-overlay-services
-})
-oe.ConfigureLookupServiceWithMongo("ls_slap", func(db *mongo.Database) interface{} {
-    return NewSLAPLookupService(NewSLAPStorage(db))  // from go-overlay-services
-})
-```
-
-**Engine Creation (lines 415-453 in TS):**
-- Create KnexStorage (SQL) from go-overlay-services
-- Include KnexStorageMigrations
-- Configure broadcaster (ARC if apiKey provided)
-- Configure advertiser (WalletAdvertiser from go-overlay-services)
-- Build sync configuration based on enableGASPSync
-- Create Engine with all parameters
-
-## Simplified Implementation Phases (Direct Porting Focus)
-
-### Phase 1: Complete Missing Configuration Methods ⚡ PRIORITY
-**Goal: Add all missing configuration methods from overlay-express**
-1. `ConfigureTopicManager(name string, manager interface{})` 
-2. `ConfigureLookupService(name string, service interface{})`
-3. `ConfigureLookupServiceWithKnex(name string, factory)` 
-4. `ConfigureLookupServiceWithMongo(name string, factory)`
-5. `ConfigureChainTracker(chainTracker interface{})`
-6. `ConfigureEngineParams(params EngineConfig)`
-7. `ConfigureWebUI(config UIConfig)`
-8. `GetAdminToken() string` method
-
-### Phase 2: Integrate Storage Layer ⚡ PRIORITY 
-**Goal: Replace placeholder engine integration with real storage**
-1. Import and integrate KnexStorage equivalent from go-overlay-services
-2. Configure Engine with proper storage (SQL + MongoDB)
-3. Handle migrations like overlay-express KnexStorageMigrations
-4. Connect database connections to Engine storage
-
-### Phase 3: Implement Core Route Functionality ⚡ PRIORITY
-**Goal: Replace placeholder routes with real functionality**
-1. `/submit` - TaggedBEEF processing using go-sdk
-2. `/lookup` - Engine.lookup() integration 
-3. `/arc-ingest` - MerklePath processing and Engine.handleNewMerkleProof()
-4. `/listTopicManagers` - Engine.listTopicManagers()
-5. `/listLookupServiceProviders` - Engine.listLookupServiceProviders()
-6. Documentation endpoints using Engine methods
-
-### Phase 4: Auto-configure SHIP/SLAP Services
-**Goal: Implement auto-configuration like overlay-express**
-1. Auto-configure SHIP topic manager and lookup service
-2. Auto-configure SLAP topic manager and lookup service  
-3. Connect to MongoDB storage for SHIP/SLAP
-4. Import discovery services from go-overlay-services
-
-### Phase 5: Complete GASP Sync Implementation
-**Goal: Implement sync functionality**
-1. `/requestSyncResponse` - Engine.provideForeignSyncResponse()
-2. `/requestForeignGASPNode` - Engine.provideForeignGASPNode()
-3. Admin sync endpoints (syncAdvertisements, startGASPSync)
-4. Configure sync settings in Engine
-
-### Phase 6: Implement Web UI (makeUserInterface Port)
-**Goal: Replace JSON status with HTML interface**
-1. Port UIConfig struct with all styling options
-2. Generate HTML interface with JavaScript like overlay-express
-3. Embed static content for documentation interface
-4. Support custom styling and branding
-
-### Phase 7: Chain Tracker Integration
-**Goal: Add WhatsOnChain equivalent functionality**
-1. Import chain tracker from go-sdk
-2. Configure with Engine like overlay-express
-3. Handle "scripts only" mode
-4. Integrate with ARC broadcaster
-
-## Implementation Roadmap by Priority
-
-### 🔥 Critical Blockers (Phase 1-3)
-**Must be completed to reach functional parity**
-
-1. **Missing Configuration Methods** - No topic managers or lookup services can be configured
-2. **Storage Integration** - Engine has no real storage, just placeholder
-3. **Core Route Implementation** - `/submit`, `/lookup`, `/arc-ingest` are placeholders
-4. **TaggedBEEF Processing** - Core overlay functionality missing
-5. **Chain Tracker Integration** - No blockchain interaction capability
-
-### ⚠️ Important Features (Phase 4-5)  
-**Required for full overlay-express compatibility**
-
-6. **SHIP/SLAP Auto-configuration** - Discovery services setup
-7. **GASP Sync Implementation** - Peer synchronization
-8. **Admin Functionality** - Advertisement sync and management
-
-### ✨ Polish Features (Phase 6-7)
-**Nice-to-have for complete experience**
-
-9. **Web UI Interface** - HTML documentation interface
-10. **Advanced Engine Configuration** - Full parameter support
-
-### Package Import Strategy
-```go
-// Already available and confirmed working:
-"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"  // ✅ Engine
-"github.com/bsv-blockchain/go-sdk"                              // ✅ TaggedBEEF, ARC, ChainTracker
-
-// Need to explore and integrate:
-"github.com/bsv-blockchain/go-overlay-services/pkg/storage"     // Storage layer
-"github.com/bsv-blockchain/go-overlay-services/pkg/interfaces" // TopicManager, LookupService
-"github.com/bsv-blockchain/go-overlay-services/pkg/discovery"   // SHIP/SLAP services
-```
-
-## Usage Pattern (Exact Port from OverlayExpress.ts)
-
-### Constructor and Configuration (Mirror TypeScript API)
-```go
-// Constructor (exact match)
-overlay := NewOverlayExpress("MyOverlayService", privateKey, "example.com", adminToken)
-
-// Fluent configuration (exact method names from TS)
-overlay.ConfigurePort(3000)
-overlay.ConfigureNetwork("test")  // "main" or "test"
-overlay.ConfigureKnex("mysql://user:pass@localhost/overlay")
-amenow.ConfigureMongo("mongodb://localhost:27017")
-overlay.ConfigureVerboseRequestLogging(true)
-overlay.ConfigureEnableGASPSync(true)
-overlay.ConfigureArcApiKey("your-arc-api-key")
-
-// Configure web UI (optional)
-overlay.ConfigureWebUI(UIConfig{
-    Host: "https://example.com",
-    PrimaryColor: "#3b6efb",
-    BackgroundColor: "#191919",
-})
-
-// Configure engine (auto-configure SHIP/SLAP by default)
-overlay.ConfigureEngine(true)  // true = auto-configure SHIP/SLAP
-
-// Start server (runs migrations, syncs, starts listening)
-overlay.Start()
-```
-
-### Manual Service Configuration (Advanced)
-```go
-// Manual topic manager and lookup service configuration
-overlay.ConfigureTopicManager("my_custom_tm", customTopicManager)
-overlay.ConfigureLookupService("my_custom_ls", customLookupService)
-
-// With database-specific factories
-overlay.ConfigureLookupServiceWithKnex("sql_service", func(db *sql.DB) (interface{}, []Migration) {
-    return NewCustomService(db), []Migration{/* migrations */}
-})
-
-overlay.ConfigureLookupServiceWithMongo("mongo_service", func(db *mongo.Database) interface{} {
-    return NewCustomMongoService(db)
-})
-
-// Advanced engine parameters
-overlay.ConfigureEngineParams(EngineConfig{
-    LogTime: true,
-    ThrowOnBroadcastFailure: true,
-    SyncConfiguration: map[string]interface{}{
-        "tm_ship": "SHIP",
-        "tm_slap": false,
-    },
-})
-```
-
-## Error Handling (Port Exact Format from OverlayExpress.ts)
-
-### Error Response Format (Lines 603-607, 735-739 in TS)
-```go
-type ErrorResponse struct {
-    Status  string `json:"status"`           // Always "error"
-    Message string `json:"message"`          // Error message
-    Code    string `json:"code,omitempty"`   // Optional error code
-}
-
-// 404 handler format (lines 936-941 in TS)
-type NotFoundError struct {
-    Status      string `json:"status"`      // "error"
-    Code        string `json:"code"`        // "ERR_ROUTE_NOT_FOUND"
-    Description string `json:"description"` // "Route not found."
+// Phase 2: Implement actual route functionality
+func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
+    // Parse x-topics header like overlay-express
+    topics := c.Get("x-topics")
+    if topics == "" {
+        return c.Status(400).JSON(ErrorResponse{
+            Status: "error",
+            Message: "x-topics header required",
+        })
+    }
+    
+    // Parse TaggedBEEF from body
+    taggedBEEF, err := transaction.ParseTaggedBEEF(c.Body())
+    if err != nil {
+        return c.Status(400).JSON(ErrorResponse{
+            Status: "error", 
+            Message: "Invalid TaggedBEEF: " + err.Error(),
+        })
+    }
+    
+    // Call Engine.submit() like overlay-express
+    result, err := s.Engine.Submit(taggedBEEF, topics)
+    if err != nil {
+        return c.Status(500).JSON(ErrorResponse{
+            Status: "error",
+            Message: err.Error(),
+        })
+    }
+    
+    return c.JSON(result)
 }
 ```
 
-### Exact Error Handling Pattern
-- Async IIFE pattern with nested error handling (as in TS)
-- 400 status for business logic errors
-- 500 status for unexpected errors
-- Consistent JSON error format across all endpoints
-- Console.error logging with chalk equivalent
+**3. Auto-Configuration Pattern**
+```go
+// Phase 3: Auto-configure SHIP/SLAP like overlay-express
+func (s *OverlayServer) autoConfigureDiscoveryServices() error {
+    // Auto-configure SHIP topic manager
+    shipTM, err := ship.NewTopicManager()
+    if err != nil {
+        return err
+    }
+    s.ConfigureTopicManager("tm_ship", shipTM)
+    
+    // Auto-configure SHIP lookup service with MongoDB
+    s.ConfigureLookupServiceWithMongo("ls_ship", func(db *mongo.Database) (engine.LookupService, error) {
+        storage := ship.NewMongoStorage(db)
+        return ship.NewLookupService(storage), nil
+    })
+    
+    // Same for SLAP...
+    return nil
+}
+```
 
-## Testing Strategy (Future Enhancement)
+## Success Criteria
 
-**Note: overlay-express has "No tests implemented yet" in package.json**
+### Phase 1 Complete When:
+- [ ] Engine initializes with proper storage (SQL + MongoDB)
+- [ ] Database migrations run successfully
+- [ ] Engine can be configured with topic managers and lookup services
+- [ ] Health check shows "engine_configured" status
+- [ ] No placeholder storage - real go-overlay-services storage integrated
 
-### Suggested Testing (Post-Port)
-- Configuration method testing
-- HTTP endpoint testing with exact request/response validation
-- Database integration testing
-- Mock external dependencies (Engine, services)
-- Full server lifecycle testing
+### Phase 2 Complete When:
+- [ ] `/submit` processes TaggedBEEF and returns transaction ID
+- [ ] `/lookup` executes queries and returns results
+- [ ] `/listTopicManagers` returns actual configured managers
+- [ ] `/listLookupServiceProviders` returns actual configured services
+- [ ] Documentation endpoints return real service documentation
+- [ ] `/arc-ingest` handles merkle proofs if ARC API key configured
+- [ ] All routes return proper JSON responses matching overlay-express format
+
+### Phase 3 Complete When:
+- [ ] `ConfigureEngine(true)` auto-configures SHIP and SLAP services
+- [ ] Zero-config setup works like overlay-express example
+- [ ] Database migrations include overlay service schemas
+- [ ] Auto-configured services are functional and show in documentation
+
+### Phase 4 Complete When:
+- [ ] `/requestSyncResponse` handles GASP sync requests
+- [ ] `/requestForeignGASPNode` returns node data for GASP network
+- [ ] Admin endpoints (`/admin/*`) require Bearer token and work
+- [ ] GASP sync can be enabled/disabled via configuration
+
+### Phase 5 Complete When:
+- [ ] Root endpoint (`/`) returns HTML documentation interface
+- [ ] Web UI shows configured services with interactive documentation
+- [ ] UIConfig styling options work (colors, fonts, custom CSS)
+- [ ] Interface matches overlay-express appearance and functionality
+
+## Next Immediate Actions
+
+### Week 1: Phase 1 - Storage Integration
+1. **Explore go-overlay-services packages**
+   ```bash
+   go doc github.com/bsv-blockchain/go-overlay-services/pkg/storage
+   go doc github.com/bsv-blockchain/go-overlay-services/pkg/interfaces
+   ```
+
+2. **Implement proper Engine configuration**
+   - Replace placeholder `engine.NewEngine()` call with real storage
+   - Configure KnexStorage equivalent with SQL database
+   - Set up MongoDB storage for lookup services
+
+3. **Add migration support**
+   - Implement database migration runner
+   - Include overlay service migrations
+
+### Week 2: Phase 2 - Core Routes  
+1. **Implement `/submit` endpoint**
+   - Import TaggedBEEF parsing from go-sdk
+   - Connect to Engine.submit() method
+   - Handle x-topics header parsing
+
+2. **Implement `/lookup` endpoint** 
+   - Connect to Engine.lookup() method
+   - Handle request/response JSON format
+
+3. **Implement documentation endpoints**
+   - Connect to Engine methods for service lists and docs
+
+### Week 3-4: Phase 3 - Auto-Configuration
+1. **Import SHIP/SLAP services**
+   - Add discovery services from go-overlay-services
+   - Implement auto-configuration logic
+   - Test zero-config setup
+
+### Testing Strategy
+- **Integration testing** against real overlay-express for API compatibility
+- **Database testing** with both SQL and MongoDB
+- **End-to-end testing** of submit/lookup workflows
+- **Performance testing** vs TypeScript implementation
 
 ## Migration Compatibility
 
 ### API Compatibility Requirements
-- Exact HTTP endpoint paths and methods
-- Identical request/response JSON formats
-- Same error response structures
-- Compatible admin token authentication
-- Matching Web UI functionality
+- ✅ HTTP endpoints match exactly (already implemented)
+- ✅ Request/response JSON formats match (error handling implemented)
+- ❌ **Missing**: Actual endpoint functionality
+- ❌ **Missing**: HTML web interface
+- ✅ Admin authentication matches (Bearer token implemented)
 
-### Behavior Compatibility
-- Same configuration method chain patterns
-- Identical auto-configuration logic for SHIP/SLAP
-- Same migration handling
-- Matching sync and advertisement behavior
+### Drop-in Replacement Goals
+- Same configuration API (`configurePort`, `configureMongo`, etc.)
+- Same HTTP endpoints and responses  
+- Same auto-configuration behavior
+- Better performance through Go's concurrency
+- Same deployment patterns (Docker, environment variables)
 
-## Implementation Quality Assessment
-
-**Structure (4/5): Excellent architectural foundation** ✅
-- Clean fluent API design
-- Proper separation of concerns
-- Good error handling patterns
-- Modern Go idioms
-
-**Completeness (1/5): Most core functionality missing** ❌
-- Engine integration incomplete
-- Core routes are placeholders
-- Missing configuration methods
-- No storage layer integration
-
-**Correctness (3/5): What exists is well-implemented** ⚠️
-- Database connections work properly
-- Middleware setup is correct
-- Error responses follow overlay-express format
-- Authentication middleware functional
-
-**Dependencies (2/5): Key overlay dependencies not properly integrated** ⚠️
-- go-overlay-services not fully utilized
-- go-sdk features not implemented
-- Storage layer missing
-- Discovery services not configured
-
-### Immediate Next Steps
-1. **Explore go-overlay-services packages** to understand available exports
-2. **Implement missing configuration methods** for topic managers and lookup services
-3. **Integrate storage layer** to replace placeholder engine configuration
-4. **Port TaggedBEEF processing** for the submit endpoint
-5. **Add chain tracker integration** for blockchain functionality
-
-## Success Criteria (Updated Based on Code Review)
-
-### Immediate Goals (Phases 1-3)
-1. **Core Route Functionality**: `/submit`, `/lookup`, `/arc-ingest` work like overlay-express
-2. **Configuration Completeness**: All missing configuration methods implemented
-3. **Storage Integration**: Engine properly configured with storage layer
-4. **TaggedBEEF Processing**: Submit endpoint handles BSV transactions
-
-### Full Parity Goals (Phases 4-7) 
-5. **SHIP/SLAP Auto-configuration**: Discovery services work identically
-6. **GASP Sync Compatibility**: Peer synchronization endpoints functional
-7. **Web UI Compatibility**: HTML documentation interface like TypeScript
-8. **Admin Compatibility**: All admin endpoints work with Bearer token auth
-
-## Next Immediate Actions
-
-### Phase 1 Tasks (Start Immediately)
-1. **Explore go-overlay-services structure**:
-   ```bash
-   # Investigate available packages and exports
-   go doc github.com/bsv-blockchain/go-overlay-services/pkg/storage
-   go doc github.com/bsv-blockchain/go-overlay-services/pkg/interfaces  
-   go doc github.com/bsv-blockchain/go-overlay-services/pkg/discovery
-   ```
-
-2. **Add missing configuration methods** to OverlayServer struct
-3. **Integrate storage layer** with Engine configuration
-4. **Import and use TaggedBEEF** from go-sdk for submit endpoint
-
-### Testing Strategy
-- **Integration testing** with real overlay-express for API compatibility
-- **Database integration testing** for storage layer
-- **Route compatibility testing** with existing clients
-- **Performance benchmarking** against TypeScript version
-
-### Migration Path
-- **Drop-in replacement**: Existing overlay-express clients work without changes
-- **Configuration compatibility**: Same fluent API patterns
-- **Docker compatibility**: Same deployment patterns
-- **Performance improvement**: Leverage Go's concurrent processing
-
-This simplified plan focuses on **completing the missing core functionality** to achieve full parity with overlay-express, building on the excellent foundation that already exists.
+This implementation plan provides a clear, systematic approach to achieving full parity with overlay-express while maximizing reuse of existing Go overlay services and maintaining the excellent architectural foundation that already exists in the current codebase.
