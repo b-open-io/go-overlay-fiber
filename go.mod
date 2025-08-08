@@ -4,6 +4,7 @@ go 1.24.3
 
 require (
 	github.com/bsv-blockchain/go-overlay-services v0.1.1
+	github.com/bsv-blockchain/go-sdk v1.2.1
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/lib/pq v1.10.9
@@ -14,7 +15,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
-	github.com/bsv-blockchain/go-sdk v1.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect

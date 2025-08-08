@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
+	"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -21,9 +22,6 @@ import (
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
-
-// Engine is imported from github.com/bsv-blockchain/go-overlay-services/pkg/core/engine
-// This matches overlay-express's approach of importing Engine from @bsv/overlay
 
 // OverlayServer represents the main server structure
 type OverlayServer struct {
@@ -45,22 +43,19 @@ type OverlayServer struct {
 	DB      *sql.DB
 	MongoDB *mongo.Database
 
-	// Engine (equivalent to overlay-express Engine from @bsv/overlay)
+	// Engine instance
 	Engine *engine.Engine
 
 	// Services
-	TopicManagers  map[string]interface{}
-	LookupServices map[string]interface{}
+	Managers        map[string]engine.TopicManager
+	Services        map[string]engine.LookupService
+	ChainTracker    chaintracker.ChainTracker
+	WebUIConfig     UIConfig
+	EngineConfig    EngineConfig
+	MigrationsToRun []Migration
 
 	// Fiber app
 	App *fiber.App
-}
-
-// ErrorResponse represents the standard error response format
-type ErrorResponse struct {
-	Status  string `json:"status"`
-	Code    string `json:"code,omitempty"`
-	Message string `json:"message"`
 }
 
 // NewOverlayServer creates a new OverlayServer instance
@@ -74,12 +69,11 @@ func NewOverlayServer(name, privateKey, fqdn string) *OverlayServer {
 		Logger:           log.Default(),
 		VerboseLogging:   false,
 		EnableGASPSync:   true,
-		TopicManagers:    make(map[string]interface{}),
-		LookupServices:   make(map[string]interface{}),
+		Managers:         make(map[string]engine.TopicManager),
+		Services:         make(map[string]engine.LookupService),
+		MigrationsToRun:  make([]Migration, 0),
 	}
 }
-
-// Configuration methods with fluent API
 
 // ConfigurePort sets the server port
 func (s *OverlayServer) ConfigurePort(port int) *OverlayServer {
@@ -99,14 +93,14 @@ func (s *OverlayServer) ConfigureNetwork(network string) *OverlayServer {
 	return s
 }
 
-// ConfigureDatabase establishes SQL database connection (equivalent to overlay-express configureKnex)
+// ConfigureDatabase establishes SQL database connection
 func (s *OverlayServer) ConfigureDatabase(driverName, connectionString string) *OverlayServer {
 	if connectionString == "" {
 		s.Logger.Printf("No SQL database connection string provided")
 		return s
 	}
 
-	// Open database connection - direct usage like overlay-express uses Knex directly
+	// Open database connection
 	db, err := sql.Open(driverName, connectionString)
 	if err != nil {
 		s.Logger.Printf("Failed to open SQL database connection: %v", err)
@@ -181,6 +175,85 @@ func (s *OverlayServer) ConfigureARCAPIKey(key string) *OverlayServer {
 	return s
 }
 
+// ConfigureTopicManager stores a topic manager with the given name
+func (s *OverlayServer) ConfigureTopicManager(name string, manager engine.TopicManager) *OverlayServer {
+	s.Managers[name] = manager
+	s.Logger.Printf("Topic manager '%s' configured", name)
+	return s
+}
+
+// ConfigureLookupService stores a lookup service with the given name
+func (s *OverlayServer) ConfigureLookupService(name string, service engine.LookupService) *OverlayServer {
+	s.Services[name] = service
+	s.Logger.Printf("Lookup service '%s' configured", name)
+	return s
+}
+
+// ConfigureLookupServiceWithDB creates a lookup service with SQL database and migrations
+func (s *OverlayServer) ConfigureLookupServiceWithDB(name string, factory LookupServiceFactory) *OverlayServer {
+	if s.DB == nil {
+		s.Logger.Printf("Warning: ConfigureLookupServiceWithDB called but no SQL database configured")
+		return s
+	}
+
+	service, migrations, err := factory(s.DB)
+	if err != nil {
+		s.Logger.Printf("Error creating lookup service '%s': %v", name, err)
+		return s
+	}
+
+	s.Services[name] = service
+
+	// Add migrations to the list to be run
+	s.MigrationsToRun = append(s.MigrationsToRun, migrations...)
+
+	s.Logger.Printf("Lookup service '%s' configured with SQL database and %d migrations", name, len(migrations))
+	return s
+}
+
+// ConfigureLookupServiceWithMongo creates a lookup service with MongoDB
+func (s *OverlayServer) ConfigureLookupServiceWithMongo(name string, factory MongoLookupServiceFactory) *OverlayServer {
+	if s.MongoDB == nil {
+		s.Logger.Printf("Warning: ConfigureLookupServiceWithMongo called but no MongoDB configured")
+		return s
+	}
+
+	service, err := factory(s.MongoDB)
+	if err != nil {
+		s.Logger.Printf("Error creating lookup service '%s': %v", name, err)
+		return s
+	}
+
+	s.Services[name] = service
+
+	s.Logger.Printf("Lookup service '%s' configured with MongoDB", name)
+	return s
+}
+
+// ConfigureChainTracker sets the chain tracker
+func (s *OverlayServer) ConfigureChainTracker(chainTracker chaintracker.ChainTracker) *OverlayServer {
+	s.ChainTracker = chainTracker
+	s.Logger.Printf("Chain tracker configured")
+	return s
+}
+
+// ConfigureEngineParams stores advanced engine configuration
+func (s *OverlayServer) ConfigureEngineParams(params EngineConfig) *OverlayServer {
+	s.EngineConfig = params
+	return s
+}
+
+// ConfigureWebUI stores web UI configuration
+func (s *OverlayServer) ConfigureWebUI(config UIConfig) *OverlayServer {
+	s.WebUIConfig = config
+	return s
+}
+
+// GetAdminToken returns the admin token
+func (s *OverlayServer) GetAdminToken() string {
+	return s.AdminToken
+}
+
 // ConfigureEngine creates and configures the Engine instance using database connections
 // This matches overlay-express's pattern of creating Engine from @bsv/overlay with database
 func (s *OverlayServer) ConfigureEngine(hostingURL string) *OverlayServer {
@@ -195,7 +268,7 @@ func (s *OverlayServer) ConfigureEngine(hostingURL string) *OverlayServer {
 		LogTime:   s.VerboseLogging,
 	}
 
-	// Initialize the Engine (equivalent to overlay-express creating Engine with KnexStorage)
+	// Initialize the Engine
 	s.Engine = engine.NewEngine(engineConfig)
 
 	s.Logger.Printf("Engine configured with hosting URL: %s", hostingURL)
@@ -203,15 +276,11 @@ func (s *OverlayServer) ConfigureEngine(hostingURL string) *OverlayServer {
 }
 
 // ConfigureEngineStorage configures the Engine's storage with available database connections
-// This matches overlay-express's approach of using KnexStorage with the database
-// Note: The Engine from go-overlay-services handles storage configuration internally
 func (s *OverlayServer) ConfigureEngineStorage() error {
 	if s.Engine == nil {
 		return fmt.Errorf("engine not configured - call ConfigureEngine first")
 	}
 
-	// The Engine from go-overlay-services will use its Storage interface
-	// which will be configured during Engine initialization
 	if s.DB != nil || s.MongoDB != nil {
 		s.Logger.Printf("Database connections available for Engine storage")
 		return nil
@@ -343,22 +412,19 @@ func (s *OverlayServer) handleWebUI(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"name":            s.Name,
-		"network":         s.Network,
-		"fqdn":            s.AdvertisableFQDN,
-		"status":          "running",
-		"database_status": databaseStatus,
-		"engine_status":   engineStatus,
-		"message":         "Go Overlay Fiber Server - Engine Integration Complete",
-		"phase":           "3",
-		"features": []string{
-			"SQL Database Support (MySQL, PostgreSQL, SQLite)",
-			"MongoDB Support",
-			"Direct Database Connections",
-			"go-overlay-services Engine Integration",
-			"Connection Health Checks",
-			"Database Pool Management",
-		},
+		"name":                     s.Name,
+		"network":                  s.Network,
+		"fqdn":                     s.AdvertisableFQDN,
+		"status":                   "running",
+		"database_status":          databaseStatus,
+		"engine_status":            engineStatus,
+		"message":                  "Go Overlay Fiber Server - Phase 1 Complete: Missing Configuration Methods Added",
+		"phase":                    "1",
+		"topic_managers":           len(s.Managers),
+		"lookup_services":          len(s.Services),
+		"migrations_count":         len(s.MigrationsToRun),
+		"webui_configured":         s.WebUIConfig.Host != "",
+		"chain_tracker_configured": s.ChainTracker != nil,
 	})
 }
 
