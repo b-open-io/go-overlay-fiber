@@ -42,8 +42,8 @@ func main() {
 	// For simple local deployments, sync can be disabled.
 	overlayServer.ConfigureGASPSync(false)
 
-	// Configure the engine with hosting URL
-	overlayServer.ConfigureEngine(os.Getenv("HOSTING_URL"))
+	// Configure the engine with auto-configuration for SHIP/SLAP services (like overlay-express)
+	overlayServer.ConfigureEngine(true)
 
 	// Lastly, start the server!
 	if err := overlayServer.Start(); err != nil {

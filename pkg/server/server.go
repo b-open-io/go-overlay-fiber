@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/ship"
+	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/slap"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
 	"github.com/gofiber/fiber/v2"
@@ -255,38 +257,121 @@ func (s *OverlayServer) GetAdminToken() string {
 }
 
 // ConfigureEngine creates and configures the Engine instance using database connections
-// This matches overlay-express's pattern of creating Engine from @bsv/overlay with database
-func (s *OverlayServer) ConfigureEngine(hostingURL string) *OverlayServer {
-	// Create Engine configuration matching overlay-express pattern
-	engineConfig := engine.Engine{
-		HostingURL:     hostingURL,
-		Managers:       make(map[string]engine.TopicManager),
-		LookupServices: make(map[string]engine.LookupService),
-		// Storage will be configured when database connections are available
-		// This matches overlay-express's approach of passing database to Engine
-		LogPrefix: s.Name,
-		LogTime:   s.VerboseLogging,
+func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServer {
+	// Don't configure engine if no databases are available
+	if s.DB == nil {
+		s.Logger.Printf("Warning: ConfigureEngine called but no SQL database configured")
+		return s
 	}
 
-	// Initialize the Engine
+	// Create storage implementation
+	storage, err := NewSQLStorage(s.DB)
+	if err != nil {
+		s.Logger.Printf("Error creating storage: %v", err)
+		return s
+	}
+
+	// Create Engine configuration with real storage
+	engineConfig := engine.Engine{
+		HostingURL:           s.AdvertisableFQDN,
+		Managers:             make(map[string]engine.TopicManager),
+		LookupServices:       make(map[string]engine.LookupService),
+		Storage:              storage,
+		LogPrefix:            s.Name,
+		ChainTracker:         s.ChainTracker,
+		Broadcaster:          s.EngineConfig.Broadcaster,
+		Advertiser:           s.EngineConfig.Advertiser,
+		SyncConfiguration:    s.EngineConfig.SyncConfiguration,
+		BroadcastFacilitator: s.EngineConfig.OverlayBroadcastFacilitator,
+	}
+
+	// Apply advanced engine configuration if provided
+	if s.EngineConfig.LogTime != nil {
+		engineConfig.LogTime = *s.EngineConfig.LogTime
+	}
+	if s.EngineConfig.ThrowOnBroadcastFailure != nil {
+		engineConfig.ErrorOnBroadcastFailure = *s.EngineConfig.ThrowOnBroadcastFailure
+	}
+
+	// Copy configured topic managers and lookup services to engine
+	for name, manager := range s.Managers {
+		engineConfig.Managers[name] = manager
+	}
+	for name, service := range s.Services {
+		engineConfig.LookupServices[name] = service
+	}
+
+	// Initialize the Engine with real configuration
 	s.Engine = engine.NewEngine(engineConfig)
 
-	s.Logger.Printf("Engine configured with hosting URL: %s", hostingURL)
+	// Auto-configure SHIP/SLAP services if requested (like overlay-express)
+	if autoConfigureShipSlap {
+		s.autoConfigureDiscoveryServices()
+	}
+
+	s.Logger.Printf("Engine configured with hosting URL: %s, storage: SQL, managers: %d, services: %d",
+		s.AdvertisableFQDN, len(s.Engine.Managers), len(s.Engine.LookupServices))
 	return s
 }
 
-// ConfigureEngineStorage configures the Engine's storage with available database connections
-func (s *OverlayServer) ConfigureEngineStorage() error {
-	if s.Engine == nil {
-		return fmt.Errorf("engine not configured - call ConfigureEngine first")
+// autoConfigureDiscoveryServices automatically configures SHIP and SLAP services like overlay-express
+func (s *OverlayServer) autoConfigureDiscoveryServices() {
+	// Auto-configure SHIP topic manager if not already configured
+	if _, exists := s.Managers["tm_ship"]; !exists {
+		var shipStorage ship.SHIPStorageInterface
+		if s.MongoDB != nil {
+			shipStorage = ship.NewSHIPStorage(s.MongoDB)
+		}
+		shipManager := ship.NewSHIPTopicManager(shipStorage, nil)
+		s.ConfigureTopicManager("tm_ship", shipManager)
+		s.Logger.Printf("Auto-configured SHIP topic manager")
 	}
 
-	if s.DB != nil || s.MongoDB != nil {
-		s.Logger.Printf("Database connections available for Engine storage")
-		return nil
+	// Auto-configure SLAP topic manager if not already configured
+	if _, exists := s.Managers["tm_slap"]; !exists {
+		var slapStorage slap.SLAPStorageInterface
+		if s.MongoDB != nil {
+			slapStorage = slap.NewSLAPStorage(s.MongoDB)
+		}
+		slapManager := slap.NewSLAPTopicManager(slapStorage, nil)
+		s.ConfigureTopicManager("tm_slap", slapManager)
+		s.Logger.Printf("Auto-configured SLAP topic manager")
 	}
 
-	return fmt.Errorf("no database connections available for engine storage")
+	// Auto-configure SHIP lookup service with MongoDB if available
+	if s.MongoDB != nil {
+		if _, exists := s.Services["ls_ship"]; !exists {
+			// TODO: Create proper PushDropDecoder and Utils implementations
+			// For now, SHIP/SLAP lookup services require these dependencies
+			s.Logger.Printf("SHIP lookup service requires PushDropDecoder and Utils implementations")
+		}
+	}
+
+	// Auto-configure SLAP lookup service with MongoDB if available
+	if s.MongoDB != nil {
+		if _, exists := s.Services["ls_slap"]; !exists {
+			// TODO: Create proper PushDropDecoder and Utils implementations
+			// For now, SHIP/SLAP lookup services require these dependencies
+			s.Logger.Printf("SLAP lookup service requires PushDropDecoder and Utils implementations")
+		}
+	}
+
+	// Ensure the engine knows about all configured services
+	if s.Engine != nil {
+		// Copy any services that were added after engine creation
+		for name, manager := range s.Managers {
+			if _, exists := s.Engine.Managers[name]; !exists {
+				s.Engine.Managers[name] = manager
+				s.Logger.Printf("Added topic manager '%s' to engine", name)
+			}
+		}
+		for name, service := range s.Services {
+			if _, exists := s.Engine.LookupServices[name]; !exists {
+				s.Engine.LookupServices[name] = service
+				s.Logger.Printf("Added lookup service '%s' to engine", name)
+			}
+		}
+	}
 }
 
 // Setup initializes the Fiber app and middleware
@@ -408,7 +493,11 @@ func (s *OverlayServer) handleWebUI(c *fiber.Ctx) error {
 	// Check engine status
 	engineStatus := "not_configured"
 	if s.Engine != nil {
-		engineStatus = "configured"
+		if s.Engine.Storage != nil {
+			engineStatus = "configured_with_storage"
+		} else {
+			engineStatus = "configured_no_storage"
+		}
 	}
 
 	return c.JSON(fiber.Map{
@@ -463,7 +552,15 @@ func (s *OverlayServer) handleHealthCheck(c *fiber.Ctx) error {
 
 	// Check engine status
 	if s.Engine != nil {
-		healthStatus["engine"] = fiber.Map{"status": "configured", "hosting_url": s.Engine.HostingURL}
+		engineHealth := fiber.Map{"hosting_url": s.Engine.HostingURL}
+		if s.Engine.Storage != nil {
+			engineHealth["status"] = "configured_with_storage"
+			engineHealth["managers_count"] = len(s.Engine.Managers)
+			engineHealth["services_count"] = len(s.Engine.LookupServices)
+		} else {
+			engineHealth["status"] = "configured_no_storage"
+		}
+		healthStatus["engine"] = engineHealth
 	} else {
 		healthStatus["engine"] = fiber.Map{"status": "not_configured"}
 	}
@@ -580,6 +677,17 @@ func (s *OverlayServer) InitializeDatabases(ctx context.Context) error {
 			return fmt.Errorf("SQL database connection failed: %w", err)
 		}
 		s.Logger.Printf("SQL database connected successfully")
+
+		// Run database migrations using storage
+		storage, err := NewSQLStorage(s.DB)
+		if err != nil {
+			s.Logger.Printf("Error creating storage for migrations: %v", err)
+			return fmt.Errorf("failed to create storage for migrations: %w", err)
+		}
+		if err := storage.RunMigrations(ctx, s.MigrationsToRun, s.Logger); err != nil {
+			s.Logger.Printf("Database migration failed: %v", err)
+			return fmt.Errorf("database migration failed: %w", err)
+		}
 	}
 
 	// Initialize MongoDB if configured
@@ -633,12 +741,7 @@ func (s *OverlayServer) Start() error {
 		return fmt.Errorf("database initialization failed: %w", err)
 	}
 
-	// Configure Engine storage with database connections (matching overlay-express pattern)
-	if s.Engine != nil {
-		if err := s.ConfigureEngineStorage(); err != nil {
-			s.Logger.Printf("Warning: Engine storage configuration failed: %v", err)
-		}
-	}
+	// Engine should already be configured with storage from ConfigureEngine call
 
 	if err := s.Setup(); err != nil {
 		return err

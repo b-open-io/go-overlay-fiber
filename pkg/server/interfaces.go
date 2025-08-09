@@ -1,12 +1,12 @@
 package server
 
 import (
-	"context"
 	"database/sql"
 	"github.com/bsv-blockchain/go-sdk/overlay/topic"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
 
+	"github.com/bsv-blockchain/go-overlay-services/pkg/core/advertiser"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -37,7 +37,7 @@ type EngineConfig struct {
 	ShipTrackers                      []string
 	SlapTrackers                      []string
 	Broadcaster                       transaction.Broadcaster
-	Advertiser                        Advertiser
+	Advertiser                        advertiser.Advertiser
 	SyncConfiguration                 map[string]engine.SyncConfiguration // string[] | "SHIP" | false
 	LogTime                           *bool
 	LogPrefix                         string
@@ -58,19 +58,7 @@ type Script struct {
 	Data []byte `json:"data"`
 }
 
-// Advertiser defines the interface for service advertisers
-type Advertiser interface {
-	Init(ctx context.Context) error
-	Advertise(ctx context.Context, advertisements []Advertisement) error
-}
-
-// Advertisement represents a service advertisement
-type Advertisement struct {
-	ProtocolID      string            `json:"protocolId"`
-	ServiceName     string            `json:"serviceName"`
-	ServiceEndpoint string            `json:"serviceEndpoint"`
-	ServiceMetadata map[string]string `json:"serviceMetadata"`
-}
+// Note: Advertiser interface is now imported from go-overlay-services/pkg/core/advertiser
 
 // Migration represents a database migration
 type Migration struct {

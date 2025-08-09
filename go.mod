@@ -3,6 +3,7 @@ module github.com/bsv-blockchain/go-overlay-fiber
 go 1.24.3
 
 require (
+	github.com/bsv-blockchain/go-overlay-discovery-services v0.0.0-00010101000000-000000000000
 	github.com/bsv-blockchain/go-overlay-services v0.1.1
 	github.com/bsv-blockchain/go-sdk v1.2.1
 	github.com/go-sql-driver/mysql v1.9.3
@@ -41,3 +42,5 @@ require (
 )
 
 replace github.com/4chain-ag/go-overlay-services => github.com/bsv-blockchain/go-overlay-services v0.1.1
+
+replace github.com/bsv-blockchain/go-overlay-discovery-services => ../go-overlay-discovery-services
