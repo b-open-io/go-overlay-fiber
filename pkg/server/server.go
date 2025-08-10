@@ -11,6 +11,7 @@ import (
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/ship"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/slap"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
+	"github.com/bsv-blockchain/go-sdk/overlay"
 	"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -604,10 +605,53 @@ func (s *OverlayServer) handleGetLookupServiceDocs(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
-	// TODO: Implement TaggedBEEF processing in Phase 3
+	// Parse x-topics header like overlay-express
+	topicsHeader := c.Get("x-topics")
+	if topicsHeader == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "x-topics header required",
+		})
+	}
+
+	// Split topics by comma
+	topics := strings.Split(topicsHeader, ",")
+	for i := range topics {
+		topics[i] = strings.TrimSpace(topics[i])
+	}
+
+	// Create TaggedBEEF from body
+	taggedBEEF := overlay.TaggedBEEF{
+		Beef:   c.Body(),
+		Topics: topics,
+	}
+
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Create context
+	ctx := c.Context()
+
+	// Call Engine.Submit() with parsed data
+	// Use historical mode for now - this should be the standard submit mode
+	result, err := s.Engine.Submit(ctx, taggedBEEF, engine.SubmitModeHistorical, nil)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Submit failed: " + err.Error(),
+		})
+	}
+
+	// Return success with steak information
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Submit endpoint will be implemented in Phase 3",
+		"status":  "success",
+		"message": "Transaction submitted successfully",
+		"steak":   result,
 	})
 }
 
