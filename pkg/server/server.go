@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -265,11 +266,31 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		return s
 	}
 
-	// Create storage implementation
-	storage, err := NewSQLStorage(s.DB)
-	if err != nil {
-		s.Logger.Printf("Error creating storage: %v", err)
-		return s
+	// Get storage configuration from environment
+	eventStorageURL := os.Getenv("EVENT_STORAGE")
+	beefStorageURL := os.Getenv("BEEF_STORAGE")
+
+	var storage engine.Storage
+	var err error
+
+	// Use overlay storage if configured, otherwise use SQL storage
+	if eventStorageURL != "" || beefStorageURL != "" {
+		storage, err = CreateOverlayStorage(eventStorageURL, beefStorageURL)
+		if err != nil {
+			s.Logger.Printf("Failed to create overlay storage: %v, falling back to SQL storage", err)
+			storage, err = NewSQLStorage(s.DB)
+			if err != nil {
+				s.Logger.Printf("Error creating SQL storage: %v", err)
+				return s
+			}
+		}
+		s.Logger.Printf("Using overlay storage with EVENT_STORAGE=%s, BEEF_STORAGE=%s", eventStorageURL, beefStorageURL)
+	} else {
+		storage, err = NewSQLStorage(s.DB)
+		if err != nil {
+			s.Logger.Printf("Error creating storage: %v", err)
+			return s
+		}
 	}
 
 	// Create Engine configuration with real storage

@@ -175,7 +175,7 @@ func TestHandleSubmitEngineIntegration(t *testing.T) {
 
 	resp, err := server.App.Test(req)
 	require.NoError(t, err)
-	
+
 	// The real engine returns 500 for unknown topics, which is expected behavior
 	// This test verifies the engine is actually being called and processing the request
 	assert.NotEqual(t, 400, resp.StatusCode, "Should not return 400 (bad request) with valid headers")
@@ -237,7 +237,7 @@ func TestHandleSubmitWithInvalidBEEF(t *testing.T) {
 
 	resp, err := server.App.Test(req)
 	require.NoError(t, err)
-	
+
 	// The engine should handle invalid BEEF and return appropriate response
 	// We don't assert specific status code as it depends on engine implementation
 	assert.True(t, resp.StatusCode >= 200, "Should receive some response from engine")
