@@ -384,9 +384,9 @@ For documentation and examples, visit:
 
     window.managerDocumentation = async (manager) => {
       try {
-        let res = await fetch(`/getDocumentationForTopicManager?manager=${manager}`);
+        let res = await fetch(`/getDocumentationForTopicManager?manager=${manager}&format=fragment`);
         let docs = await res.text();
-        let managerReadme = Convert(docs);
+        let managerReadme = docs; // Already formatted HTML fragment, don't convert
 
         let managerData = managersData[manager];
         let iconURL = managerData?.iconURL || faviconUrl;
@@ -405,9 +405,9 @@ For documentation and examples, visit:
 
     window.topicDocumentation = async (provider) => {
       try {
-        let res = await fetch(`/getDocumentationForLookupServiceProvider?lookupService=${provider}`);
+        let res = await fetch(`/getDocumentationForLookupServiceProvider?provider=${provider}&format=fragment`);
         let docs = await res.text();
-        let providerReadme = Convert(docs);
+        let providerReadme = docs; // Already formatted HTML fragment, don't convert
 
         let providerData = providersData[provider];
         let iconURL = providerData?.iconURL || faviconUrl;
@@ -459,7 +459,11 @@ For documentation and examples, visit:
       };
 
       // Load topic managers
-      fetch('/listTopicManagers')
+      fetch('/listTopicManagers', {
+        headers: {
+          'Accept': 'application/json'
+        }
+      })
         .then(res => res.json())
         .then(managers => {
           managersData = managers;
@@ -468,6 +472,7 @@ For documentation and examples, visit:
           if (Object.keys(managers).length === 0) {
             managerList.innerHTML = '<li class="list-item"><span style="color: #666;">No topic managers configured</span></li>';
           } else {
+            managerList.innerHTML = ''; // Clear the loading message
             Object.keys(managers).forEach(manager => {
               let managerData = managers[manager];
               let li = document.createElement('li');
@@ -493,7 +498,11 @@ For documentation and examples, visit:
         });
 
       // Load lookup service providers
-      fetch('/listLookupServiceProviders')
+      fetch('/listLookupServiceProviders', {
+        headers: {
+          'Accept': 'application/json'
+        }
+      })
         .then(res => res.json())
         .then(providers => {
           providersData = providers;
@@ -502,6 +511,7 @@ For documentation and examples, visit:
           if (Object.keys(providers).length === 0) {
             providerList.innerHTML = '<li class="list-item"><span style="color: #666;">No lookup service providers configured</span></li>';
           } else {
+            providerList.innerHTML = ''; // Clear the loading message
             Object.keys(providers).forEach(provider => {
               let providerData = providers[provider];
               let li = document.createElement('li');

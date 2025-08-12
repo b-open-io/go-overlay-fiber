@@ -462,8 +462,9 @@ func (s *OverlayServer) Setup() error {
 // setupRoutes configures all the HTTP routes
 func (s *OverlayServer) setupRoutes() {
 	// Public routes
-	s.App.Get("/", s.handleWebUI)
-	s.App.Get("/ui", s.handleDynamicInterface)
+	s.App.Get("/", s.handleDynamicInterface)   // Root path serves dynamic interface like overlay-express
+	s.App.Get("/ui", s.handleDynamicInterface) // Keep for backward compatibility
+	s.App.Get("/services", s.handleWebUI)      // Move dashboard to /services
 	s.App.Get("/dashboard", s.handleDashboard)
 	s.App.Get("/test", s.handleAPITester)
 	s.App.Get("/health", s.handleHealthCheck)
@@ -961,7 +962,29 @@ func (s *OverlayServer) handleListLookupServiceProviders(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleGetTopicManagerDocs(c *fiber.Ctx) error {
-	// Render template
+	// Check if this is an AJAX request from the dynamic interface
+	isAjax := c.Get("X-Requested-With") == "XMLHttpRequest" || c.Query("format") == "fragment"
+
+	if isAjax {
+		// Return just the content fragment for dynamic interface
+		managerName := c.Query("manager", "unknown")
+		data := map[string]interface{}{
+			"Name": managerName,
+		}
+
+		html, err := s.TemplateManager.RenderTemplate("topic-manager-fragment", data)
+		if err != nil {
+			return c.Status(500).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Template rendering failed: " + err.Error(),
+			})
+		}
+
+		c.Set("Content-Type", "text/html")
+		return c.SendString(html)
+	}
+
+	// Render full template for direct access
 	html, err := s.TemplateManager.RenderTemplate("topic-manager-docs", nil)
 	if err != nil {
 		return c.Status(500).JSON(ErrorResponse{
@@ -975,7 +998,29 @@ func (s *OverlayServer) handleGetTopicManagerDocs(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleGetLookupServiceDocs(c *fiber.Ctx) error {
-	// Render template
+	// Check if this is an AJAX request from the dynamic interface
+	isAjax := c.Get("X-Requested-With") == "XMLHttpRequest" || c.Query("format") == "fragment"
+
+	if isAjax {
+		// Return just the content fragment for dynamic interface
+		providerName := c.Query("provider", "unknown")
+		data := map[string]interface{}{
+			"Name": providerName,
+		}
+
+		html, err := s.TemplateManager.RenderTemplate("lookup-service-fragment", data)
+		if err != nil {
+			return c.Status(500).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Template rendering failed: " + err.Error(),
+			})
+		}
+
+		c.Set("Content-Type", "text/html")
+		return c.SendString(html)
+	}
+
+	// Render full template for direct access
 	html, err := s.TemplateManager.RenderTemplate("lookup-service-docs", nil)
 	if err != nil {
 		return c.Status(500).JSON(ErrorResponse{
