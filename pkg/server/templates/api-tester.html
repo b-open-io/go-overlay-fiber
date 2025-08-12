@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{.Name}} - Interactive API Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; }
+        h1 { border-bottom: 2px solid #007cba; padding-bottom: 10px; }
+        .nav { margin-bottom: 20px; }
+        .nav a { margin-right: 15px; padding: 8px 16px; background: #007cba; color: white; text-decoration: none; border-radius: 4px; }
+        .nav a:hover { background: #0056a3; }
+        
+        .test-section { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .test-section h3 { color: #007cba; margin-top: 0; }
+        .test-form { display: grid; gap: 15px; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label { font-weight: bold; margin-bottom: 5px; color: #495057; }
+        .form-group input, .form-group textarea, .form-group select { 
+            padding: 10px; border: 1px solid #ced4da; border-radius: 4px; font-family: monospace; 
+        }
+        .form-group textarea { min-height: 100px; resize: vertical; }
+        .file-input { padding: 8px; }
+        
+        .btn { background: #007cba; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn:hover { background: #0056a3; }
+        .btn:disabled { background: #6c757d; cursor: not-allowed; }
+        .btn-secondary { background: #6c757d; }
+        .btn-success { background: #28a745; }
+        .btn-danger { background: #dc3545; }
+        
+        .response-container { margin-top: 15px; }
+        .response { padding: 15px; border-radius: 4px; font-family: monospace; white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
+        .response.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .response.error { background: #f8d7da; color: #721c24; border: 1px solid #f1b0b7; }
+        .response.info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        
+        .websocket-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .websocket-controls, .websocket-log { background: #f8f9fa; padding: 15px; border-radius: 4px; }
+        .websocket-log { font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; }
+        .log-entry { margin-bottom: 5px; padding: 2px 5px; border-radius: 3px; }
+        .log-sent { background: #e7f3ff; }
+        .log-received { background: #f0f8e7; }
+        .log-error { background: #ffebee; }
+        .log-info { background: #fff3e0; }
+        
+        .status-indicator { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+        .status-connected { background-color: #28a745; }
+        .status-disconnected { background-color: #dc3545; }
+        .status-connecting { background-color: #ffc107; }
+        
+        .code-sample { background: #282c34; color: #abb2bf; padding: 15px; border-radius: 4px; margin: 10px 0; overflow-x: auto; }
+        .code-sample pre { margin: 0; font-family: 'Courier New', monospace; }
+        
+        .method-badge { padding: 2px 8px; border-radius: 3px; font-weight: bold; font-size: 12px; }
+        .method-get { background: #28a745; color: white; }
+        .method-post { background: #007cba; color: white; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(600px, 1fr)); gap: 20px; }
+        
+        @media (max-width: 768px) {
+            .container { margin: 10px; padding: 15px; }
+            .websocket-section { grid-template-columns: 1fr; }
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Interactive API Tester - {{.Name}}</h1>
+        
+        <div class="nav">
+            <a href="/">&larr; Main Dashboard</a>
+            <a href="/dashboard">Enhanced Dashboard</a>
+            <a href="/ui">Dynamic Interface</a>
+            <a href="/health" target="_blank">Health Check</a>
+        </div>
+
+        <div class="grid">
+            <!-- Submit Transaction Test -->
+            <div class="test-section">
+                <h3><span class="method-badge method-post">POST</span> /submit - Submit Transaction</h3>
+                <p>Submit transactions with BEEF format and x-topics header.</p>
+                
+                <div class="test-form">
+                    <div class="form-group">
+                        <label>Topics (x-topics header):</label>
+                        <input type="text" id="submit-topics" placeholder="topic1,topic2" value="example_topic">
+                    </div>
+                    <div class="form-group">
+                        <label>BEEF Data (hex or file):</label>
+                        <textarea id="submit-beef" placeholder="Enter BEEF data in hex format...">0100beef01fe636d0c0007021400fe507c0c7aa754cef1f7889d5fd395df1f2e58176aa71a7c78040e301e06f0000000000000000ef0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Or Upload BEEF File:</label>
+                        <input type="file" id="submit-beef-file" class="file-input" accept=".beef">
+                    </div>
+                    <button class="btn" onclick="testSubmit()">Submit Transaction</button>
+                </div>
+                
+                <div class="response-container">
+                    <div id="submit-response" class="response" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Lookup Test -->
+            <div class="test-section">
+                <h3><span class="method-badge method-post">POST</span> /lookup - Event Lookup</h3>
+                <p>Perform event-based lookups with overlay storage capabilities.</p>
+                
+                <div class="test-form">
+                    <div class="form-group">
+                        <label>Lookup Query (JSON):</label>
+                        <textarea id="lookup-query">{
+  "event": "example_event",
+  "limit": 10
+}</textarea>
+                    </div>
+                    <button class="btn" onclick="testLookup()">Perform Lookup</button>
+                </div>
+                
+                <div class="response-container">
+                    <div id="lookup-response" class="response" style="display: none;"></div>
+                </div>
+                
+                <div class="code-sample">
+                    <pre>Example queries:
+{
+  "event": "specific_event_name"
+}
+
+{
+  "events": ["event1", "event2"],
+  "limit": 50,
+  "join": "OR"
+}</pre>
+                </div>
+            </div>
+
+            <!-- ARC Ingest Test -->
+            <div class="test-section">
+                <h3><span class="method-badge method-post">POST</span> /arc-ingest - ARC Webhook</h3>
+                <p>Process ARC webhook payloads with merkle proofs for transaction confirmation.</p>
+                
+                <div class="test-form">
+                    <div class="form-group">
+                        <label>Transaction ID (hex):</label>
+                        <input type="text" id="arc-txid" placeholder="0123456789abcdef...">
+                    </div>
+                    <div class="form-group">
+                        <label>Merkle Path (hex):</label>
+                        <input type="text" id="arc-merkle-path" placeholder="Merkle path in hex format">
+                    </div>
+                    <div class="form-group">
+                        <label>Block Height:</label>
+                        <input type="number" id="arc-block-height" placeholder="123456" min="1">
+                    </div>
+                    <button class="btn" onclick="testARCIngest()">Submit ARC Data</button>
+                </div>
+                
+                <div class="response-container">
+                    <div id="arc-response" class="response" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Health Check Test -->
+            <div class="test-section">
+                <h3><span class="method-badge method-get">GET</span> /health - Health Check</h3>
+                <p>Check service health and get system status information.</p>
+                
+                <div class="test-form">
+                    <button class="btn" onclick="testHealth()">Check Health</button>
+                    <button class="btn btn-secondary" onclick="testHealthDetailed()">Detailed Health Check</button>
+                </div>
+                
+                <div class="response-container">
+                    <div id="health-response" class="response" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Service Discovery Tests -->
+            <div class="test-section">
+                <h3><span class="method-badge method-get">GET</span> Service Discovery</h3>
+                <p>Discover available topic managers and lookup service providers.</p>
+                
+                <div class="test-form">
+                    <button class="btn" onclick="testTopicManagers()">List Topic Managers</button>
+                    <button class="btn" onclick="testLookupProviders()">List Lookup Providers</button>
+                </div>
+                
+                <div class="response-container">
+                    <div id="discovery-response" class="response" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Dashboard API Test -->
+            <div class="test-section">
+                <h3><span class="method-badge method-get">GET</span> /dashboard?format=json - Dashboard API</h3>
+                <p>Get comprehensive dashboard data in JSON format for monitoring.</p>
+                
+                <div class="test-form">
+                    <button class="btn" onclick="testDashboardAPI()">Get Dashboard Data</button>
+                </div>
+                
+                <div class="response-container">
+                    <div id="dashboard-api-response" class="response" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- WebSocket Testing Section -->
+        <div class="test-section">
+            <h2>WebSocket Real-time Testing</h2>
+            <div class="websocket-section">
+                <div class="websocket-controls">
+                    <h4>Connection Control</h4>
+                    <p>
+                        <span id="ws-status-indicator" class="status-indicator status-disconnected"></span>
+                        <span id="ws-status-text">Disconnected</span>
+                    </p>
+                    
+                    <div class="form-group">
+                        <label>WebSocket URL:</label>
+                        <input type="text" id="ws-url" value="{{.WebSocketURL}}">
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin: 15px 0;">
+                        <button class="btn" onclick="connectWebSocket()">Connect</button>
+                        <button class="btn btn-danger" onclick="disconnectWebSocket()">Disconnect</button>
+                        <button class="btn btn-secondary" onclick="clearLog()">Clear Log</button>
+                    </div>
+
+                    <h4>Subscription Control</h4>
+                    <div class="form-group">
+                        <label>Topics (comma-separated):</label>
+                        <input type="text" id="ws-topics" placeholder="topic1,topic2,all" value="all">
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin: 15px 0;">
+                        <button class="btn btn-success" onclick="subscribe()">Subscribe</button>
+                        <button class="btn btn-danger" onclick="unsubscribe()">Unsubscribe</button>
+                    </div>
+
+                    <h4>Test Message</h4>
+                    <div class="form-group">
+                        <label>Custom Message (JSON):</label>
+                        <textarea id="ws-message">{"action": "ping", "timestamp": "now"}</textarea>
+                    </div>
+                    <button class="btn" onclick="sendMessage()">Send Message</button>
+                </div>
+
+                <div class="websocket-log">
+                    <h4>Connection Log</h4>
+                    <div id="ws-log-content">
+                        <div class="log-entry log-info">WebSocket testing interface ready. Click Connect to start.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        
+        // Utility functions
+        function showResponse(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = content;
+            element.className = `response ${type}`;
+            element.style.display = 'block';
+        }
+
+        function logMessage(message, type = 'info') {
+            const logContent = document.getElementById('ws-log-content');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContent.appendChild(entry);
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        function updateWSStatus(status, text) {
+            const indicator = document.getElementById('ws-status-indicator');
+            const statusText = document.getElementById('ws-status-text');
+            
+            indicator.className = `status-indicator status-${status}`;
+            statusText.textContent = text;
+        }
+
+        // API Testing Functions
+        async function testSubmit() {
+            const topics = document.getElementById('submit-topics').value;
+            const beefData = document.getElementById('submit-beef').value;
+            const beefFile = document.getElementById('submit-beef-file').files[0];
+            
+            let data;
+            if (beefFile) {
+                data = await beefFile.arrayBuffer();
+            } else {
+                // Convert hex string to binary
+                const hex = beefData.replace(/\s/g, '');
+                const bytes = new Uint8Array(hex.length / 2);
+                for (let i = 0; i < hex.length; i += 2) {
+                    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+                }
+                data = bytes.buffer;
+            }
+            
+            try {
+                const response = await fetch('/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/octet-stream',
+                        'x-topics': topics
+                    },
+                    body: data
+                });
+                
+                const result = await response.text();
+                const type = response.ok ? 'success' : 'error';
+                showResponse('submit-response', `Status: ${response.status}\n\n${result}`, type);
+            } catch (error) {
+                showResponse('submit-response', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testLookup() {
+            const query = document.getElementById('lookup-query').value;
+            
+            try {
+                const response = await fetch('/lookup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: query
+                });
+                
+                const result = await response.text();
+                const type = response.ok ? 'success' : 'error';
+                showResponse('lookup-response', `Status: ${response.status}\n\n${result}`, type);
+            } catch (error) {
+                showResponse('lookup-response', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testARCIngest() {
+            const txid = document.getElementById('arc-txid').value;
+            const merklePath = document.getElementById('arc-merkle-path').value;
+            const blockHeight = parseInt(document.getElementById('arc-block-height').value);
+            
+            const payload = {
+                txid: txid,
+                merklePath: merklePath,
+                blockHeight: blockHeight
+            };
+            
+            try {
+                const response = await fetch('/arc-ingest', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.text();
+                const type = response.ok ? 'success' : 'error';
+                showResponse('arc-response', `Status: ${response.status}\n\n${result}`, type);
+            } catch (error) {
+                showResponse('arc-response', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testHealth() {
+            try {
+                const response = await fetch('/health');
+                const result = await response.text();
+                const type = response.ok ? 'success' : 'error';
+                showResponse('health-response', `Status: ${response.status}\n\n${result}`, type);
+            } catch (error) {
+                showResponse('health-response', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testHealthDetailed() {
+            try {
+                const response = await fetch('/health');
+                const result = await response.json();
+                const formatted = JSON.stringify(result, null, 2);
+                const type = response.ok ? 'success' : 'error';
+                showResponse('health-response', `Status: ${response.status}\n\n${formatted}`, type);
+            } catch (error) {
+                showResponse('health-response', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testTopicManagers() {
+            try {
+                const response = await fetch('/listTopicManagers?format=json');
+                const result = await response.json();
+                const formatted = JSON.stringify(result, null, 2);
+                const type = response.ok ? 'success' : 'error';
+                showResponse('discovery-response', `Topic Managers (${response.status}):\n\n${formatted}`, type);
+            } catch (error) {
+                showResponse('discovery-response', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testLookupProviders() {
+            try {
+                const response = await fetch('/listLookupServiceProviders?format=json');
+                const result = await response.json();
+                const formatted = JSON.stringify(result, null, 2);
+                const type = response.ok ? 'success' : 'error';
+                showResponse('discovery-response', `Lookup Providers (${response.status}):\n\n${formatted}`, type);
+            } catch (error) {
+                showResponse('discovery-response', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testDashboardAPI() {
+            try {
+                const response = await fetch('/dashboard?format=json');
+                const result = await response.json();
+                const formatted = JSON.stringify(result, null, 2);
+                const type = response.ok ? 'success' : 'error';
+                showResponse('dashboard-api-response', `Dashboard Data (${response.status}):\n\n${formatted}`, type);
+            } catch (error) {
+                showResponse('dashboard-api-response', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // WebSocket Testing Functions
+        function connectWebSocket() {
+            const url = document.getElementById('ws-url').value;
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                logMessage('Already connected to WebSocket', 'info');
+                return;
+            }
+            
+            logMessage(`Connecting to ${url}...`, 'info');
+            updateWSStatus('connecting', 'Connecting...');
+            
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = function(event) {
+                    logMessage('WebSocket connection opened', 'info');
+                    updateWSStatus('connected', 'Connected');
+                };
+                
+                ws.onmessage = function(event) {
+                    logMessage(`Received: ${event.data}`, 'received');
+                };
+                
+                ws.onclose = function(event) {
+                    logMessage(`Connection closed (code: ${event.code}, reason: ${event.reason})`, 'error');
+                    updateWSStatus('disconnected', 'Disconnected');
+                };
+                
+                ws.onerror = function(error) {
+                    logMessage(`WebSocket error: ${error}`, 'error');
+                    updateWSStatus('disconnected', 'Error');
+                };
+            } catch (error) {
+                logMessage(`Failed to connect: ${error.message}`, 'error');
+                updateWSStatus('disconnected', 'Error');
+            }
+        }
+
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+                logMessage('WebSocket disconnected by user', 'info');
+                updateWSStatus('disconnected', 'Disconnected');
+            }
+        }
+
+        function subscribe() {
+            const topics = document.getElementById('ws-topics').value.split(',').map(t => t.trim());
+            const message = {
+                action: 'subscribe',
+                topics: topics
+            };
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+                logMessage(`Sent subscribe: ${JSON.stringify(message)}`, 'sent');
+            } else {
+                logMessage('WebSocket not connected', 'error');
+            }
+        }
+
+        function unsubscribe() {
+            const topics = document.getElementById('ws-topics').value.split(',').map(t => t.trim());
+            const message = {
+                action: 'unsubscribe',
+                topics: topics
+            };
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+                logMessage(`Sent unsubscribe: ${JSON.stringify(message)}`, 'sent');
+            } else {
+                logMessage('WebSocket not connected', 'error');
+            }
+        }
+
+        function sendMessage() {
+            const messageText = document.getElementById('ws-message').value;
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                try {
+                    // Try to parse as JSON to validate
+                    JSON.parse(messageText);
+                    ws.send(messageText);
+                    logMessage(`Sent custom message: ${messageText}`, 'sent');
+                } catch (error) {
+                    logMessage(`Invalid JSON message: ${error.message}`, 'error');
+                }
+            } else {
+                logMessage('WebSocket not connected', 'error');
+            }
+        }
+
+        function clearLog() {
+            const logContent = document.getElementById('ws-log-content');
+            logContent.innerHTML = '<div class="log-entry log-info">Log cleared.</div>';
+        }
+
+        // Auto-update timestamp in custom message
+        setInterval(() => {
+            const messageTextarea = document.getElementById('ws-message');
+            if (messageTextarea.value.includes('"timestamp": "now"')) {
+                const currentMessage = messageTextarea.value;
+                const updatedMessage = currentMessage.replace('"timestamp": "now"', `"timestamp": "${new Date().toISOString()}"`);
+                if (currentMessage.includes('"timestamp": "now"')) {
+                    messageTextarea.value = updatedMessage.replace(new Date().toISOString(), 'now');
+                }
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

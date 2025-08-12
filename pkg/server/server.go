@@ -463,6 +463,9 @@ func (s *OverlayServer) Setup() error {
 func (s *OverlayServer) setupRoutes() {
 	// Public routes
 	s.App.Get("/", s.handleWebUI)
+	s.App.Get("/ui", s.handleDynamicInterface)
+	s.App.Get("/dashboard", s.handleDashboard)
+	s.App.Get("/test", s.handleAPITester)
 	s.App.Get("/health", s.handleHealthCheck)
 	s.App.Get("/listTopicManagers", s.handleListTopicManagers)
 	s.App.Get("/listLookupServiceProviders", s.handleListLookupServiceProviders)
@@ -621,6 +624,189 @@ func getStatusText(status string) string {
 	}
 }
 
+func (s *OverlayServer) handleDashboard(c *fiber.Ctx) error {
+	format := c.Query("format", "html")
+
+	// Collect comprehensive dashboard data
+	dashboardData := s.collectDashboardData()
+
+	// Return JSON if requested for AJAX updates
+	if format == "json" {
+		return c.JSON(dashboardData)
+	}
+
+	// Render HTML template
+	html, err := s.TemplateManager.RenderTemplate("dashboard", dashboardData)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Dashboard template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func (s *OverlayServer) collectDashboardData() *DashboardData {
+	ctx := context.Background()
+
+	// Basic server information
+	data := &DashboardData{
+		Name:                 s.Name,
+		Network:              s.Network,
+		FQDN:                 s.AdvertisableFQDN,
+		Port:                 s.Port,
+		Timestamp:            time.Now().Format("2006-01-02 15:04:05 MST"),
+		AdminTokenConfigured: s.AdminToken != "",
+		GASPSyncEnabled:      s.EnableGASPSync,
+	}
+
+	// Queue Manager status
+	if s.QueueManager != nil {
+		data.QueueManager = s.QueueManager.GetStatus()
+	} else {
+		data.QueueManager = map[string]interface{}{"status": "not_configured"}
+	}
+
+	// WebSocket Manager status
+	if s.WebSocketManager != nil {
+		data.WebSocketManager = s.WebSocketManager.GetStats()
+	} else {
+		data.WebSocketManager = map[string]interface{}{"status": "not_configured"}
+	}
+
+	// Database status
+	data.Databases = make(map[string]interface{})
+	if s.DB != nil {
+		if err := s.DB.PingContext(ctx); err != nil {
+			data.Databases["sql"] = map[string]interface{}{"status": "unhealthy", "error": err.Error()}
+		} else {
+			data.Databases["sql"] = map[string]interface{}{"status": "healthy"}
+		}
+	}
+
+	if s.MongoDB != nil {
+		if err := s.MongoDB.Client().Ping(ctx, nil); err != nil {
+			data.Databases["mongodb"] = map[string]interface{}{"status": "unhealthy", "error": err.Error()}
+		} else {
+			data.Databases["mongodb"] = map[string]interface{}{"status": "healthy"}
+		}
+	}
+
+	// Engine status
+	if s.Engine != nil {
+		data.Engine = map[string]interface{}{
+			"hosting_url":    s.Engine.HostingURL,
+			"managers_count": len(s.Engine.Managers),
+			"services_count": len(s.Engine.LookupServices),
+		}
+
+		// Storage information
+		if s.Engine.Storage != nil {
+			if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+				data.StorageType = "overlay_storage"
+				data.StorageStatus = "active"
+				data.StorageConfig = map[string]interface{}{
+					"event_storage": os.Getenv("EVENT_STORAGE"),
+					"beef_storage":  os.Getenv("BEEF_STORAGE"),
+				}
+			} else if _, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
+				data.StorageType = "sql_wrapper"
+				data.StorageStatus = "active"
+				data.StorageConfig = map[string]interface{}{
+					"type": "sql_with_overlay_features",
+				}
+			} else {
+				data.StorageType = "basic_storage"
+				data.StorageStatus = "active"
+			}
+		} else {
+			data.StorageType = "none"
+			data.StorageStatus = "not_configured"
+		}
+	} else {
+		data.Engine = map[string]interface{}{"status": "not_configured"}
+		data.StorageType = "none"
+		data.StorageStatus = "not_configured"
+	}
+
+	return data
+}
+
+func (s *OverlayServer) handleDynamicInterface(c *fiber.Ctx) error {
+	// Determine storage info
+	storageInfo := "Unknown"
+	if s.Engine != nil && s.Engine.Storage != nil {
+		if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+			storageInfo = "Overlay Storage"
+		} else if _, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
+			storageInfo = "SQL + Overlay Features"
+		} else {
+			storageInfo = "Basic Storage"
+		}
+	}
+
+	// Determine protocol for WebSocket URL
+	protocol := "ws://"
+	if c.Secure() {
+		protocol = "wss://"
+	}
+
+	// Prepare template data
+	data := &DynamicInterfaceData{
+		Name:         s.Name,
+		Network:      s.Network,
+		FQDN:         s.AdvertisableFQDN,
+		StorageInfo:  storageInfo,
+		BaseURL:      fmt.Sprintf("http://%s", c.Get("Host")),
+		WebSocketURL: fmt.Sprintf("%s%s/ws", protocol, c.Get("Host")),
+	}
+
+	// Use HTTPS if secure
+	if c.Secure() {
+		data.BaseURL = fmt.Sprintf("https://%s", c.Get("Host"))
+	}
+
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("dynamic-interface", data)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Dynamic interface template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func (s *OverlayServer) handleAPITester(c *fiber.Ctx) error {
+	// Determine protocol for WebSocket URL
+	protocol := "ws://"
+	if c.Secure() {
+		protocol = "wss://"
+	}
+
+	// Prepare template data
+	data := &APITesterData{
+		Name:         s.Name,
+		WebSocketURL: fmt.Sprintf("%s%s/ws", protocol, c.Get("Host")),
+	}
+
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("api-tester", data)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "API tester template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
 func (s *OverlayServer) handleWebSocketUpgrade(c *fiber.Ctx) error {
 	if s.WebSocketManager == nil {
 		return c.Status(503).JSON(ErrorResponse{
@@ -703,7 +889,29 @@ func (s *OverlayServer) handleHealthCheck(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleListTopicManagers(c *fiber.Ctx) error {
-	// Render template
+	acceptHeader := c.Get("Accept")
+	wantsJSON := strings.Contains(acceptHeader, "application/json") || c.Query("format") == "json"
+
+	// Collect topic managers data
+	managers := make(map[string]interface{})
+
+	if s.Engine != nil && s.Engine.Managers != nil {
+		for name, manager := range s.Engine.Managers {
+			managers[name] = map[string]interface{}{
+				"name":        name,
+				"type":        fmt.Sprintf("%T", manager),
+				"description": fmt.Sprintf("Topic manager for %s", name),
+				"iconURL":     "https://bsvblockchain.org/favicon.ico",
+			}
+		}
+	}
+
+	// Return JSON if requested
+	if wantsJSON {
+		return c.JSON(managers)
+	}
+
+	// Otherwise render HTML template
 	html, err := s.TemplateManager.RenderTemplate("topic-managers", nil)
 	if err != nil {
 		return c.Status(500).JSON(ErrorResponse{
@@ -717,7 +925,29 @@ func (s *OverlayServer) handleListTopicManagers(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleListLookupServiceProviders(c *fiber.Ctx) error {
-	// Render template
+	acceptHeader := c.Get("Accept")
+	wantsJSON := strings.Contains(acceptHeader, "application/json") || c.Query("format") == "json"
+
+	// Collect lookup service providers data
+	providers := make(map[string]interface{})
+
+	if s.Engine != nil && s.Engine.LookupServices != nil {
+		for name, service := range s.Engine.LookupServices {
+			providers[name] = map[string]interface{}{
+				"name":        name,
+				"type":        fmt.Sprintf("%T", service),
+				"description": fmt.Sprintf("Lookup service provider for %s", name),
+				"iconURL":     "https://bsvblockchain.org/favicon.ico",
+			}
+		}
+	}
+
+	// Return JSON if requested
+	if wantsJSON {
+		return c.JSON(providers)
+	}
+
+	// Otherwise render HTML template
 	html, err := s.TemplateManager.RenderTemplate("lookup-services", nil)
 	if err != nil {
 		return c.Status(500).JSON(ErrorResponse{

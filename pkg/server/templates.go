@@ -39,6 +39,9 @@ func (tm *TemplateManager) LoadTemplates() error {
 	// Define template files to load
 	templateFiles := map[string]string{
 		"main":                "main.html",
+		"dashboard":           "dashboard.html",
+		"dynamic-interface":   "dynamic-interface.html",
+		"api-tester":          "api-tester.html",
 		"topic-managers":      "topic-managers.html",
 		"lookup-services":     "lookup-services.html",
 		"topic-manager-docs":  "topic-manager-docs.html",
@@ -85,4 +88,42 @@ type MainPageData struct {
 	StatusClass    string
 	StatusText     string
 	StorageType    string
+}
+
+// DashboardData represents data for the enhanced dashboard template
+type DashboardData struct {
+	Name                 string
+	Network              string
+	FQDN                 string
+	Port                 int
+	Timestamp            string
+	AdminTokenConfigured bool
+	GASPSyncEnabled      bool
+
+	// Component status
+	QueueManager     map[string]interface{}
+	WebSocketManager map[string]interface{}
+	Databases        map[string]interface{}
+	Engine           map[string]interface{}
+
+	// Storage information
+	StorageType   string
+	StorageStatus string
+	StorageConfig map[string]interface{}
+}
+
+// DynamicInterfaceData represents data for the dynamic interface template
+type DynamicInterfaceData struct {
+	Name         string
+	Network      string
+	FQDN         string
+	StorageInfo  string
+	BaseURL      string
+	WebSocketURL string
+}
+
+// APITesterData represents data for the API tester template
+type APITesterData struct {
+	Name         string
+	WebSocketURL string
 }

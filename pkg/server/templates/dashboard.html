@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{.Name}} - Enhanced Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #007cba; padding-bottom: 10px; }
+        h2, h3 { color: #555; margin-top: 25px; }
+        .status { display: inline-block; padding: 4px 12px; border-radius: 4px; font-weight: bold; color: white; }
+        .status.healthy { background-color: #28a745; }
+        .status.warning { background-color: #ffc107; }
+        .status.error { background-color: #dc3545; }
+        .status.info { background-color: #007cba; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
+        .card { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; }
+        .card h3 { margin-top: 0; color: #007cba; }
+        .metric { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #e9ecef; }
+        .metric:last-child { border-bottom: none; }
+        .metric-label { font-weight: bold; color: #495057; }
+        .metric-value { color: #007cba; font-weight: bold; }
+        .topic-list { max-height: 200px; overflow-y: auto; }
+        .topic-item { display: flex; justify-content: space-between; padding: 4px 8px; background: #e9ecef; margin: 2px 0; border-radius: 4px; }
+        .refresh-btn { background: #007cba; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-bottom: 20px; }
+        .refresh-btn:hover { background: #0056a3; }
+        .timestamp { color: #6c757d; font-size: 14px; margin-bottom: 10px; }
+        .config-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .config-table th, .config-table td { text-align: left; padding: 8px; border-bottom: 1px solid #dee2e6; }
+        .config-table th { background-color: #e9ecef; font-weight: bold; }
+        .error-message { color: #dc3545; font-style: italic; }
+        .websocket-status { display: flex; align-items: center; gap: 10px; }
+        .connection-indicator { width: 12px; height: 12px; border-radius: 50%; }
+        .connected { background-color: #28a745; }
+        .disconnected { background-color: #dc3545; }
+    </style>
+    <script>
+        // Auto-refresh functionality
+        let refreshInterval;
+        
+        function refreshDashboard() {
+            fetch('/dashboard?format=json')
+                .then(response => response.json())
+                .then(data => {
+                    updateDashboardData(data);
+                    document.querySelector('.timestamp').textContent = 'Last updated: ' + new Date().toLocaleString();
+                })
+                .catch(error => {
+                    console.error('Error refreshing dashboard:', error);
+                    document.querySelector('.timestamp').innerHTML = '<span class="error-message">Error refreshing data: ' + error.message + '</span>';
+                });
+        }
+        
+        function updateDashboardData(data) {
+            // Update queue metrics
+            if (data.QueueManager) {
+                updateElement('queue-running', data.QueueManager.running ? 'Yes' : 'No');
+                updateElement('queue-length', data.QueueManager.queue_length || 'N/A');
+                updateElement('queue-concurrency', data.QueueManager.config?.concurrency || 'N/A');
+                updateElement('queue-batch-size', data.QueueManager.config?.batch_size || 'N/A');
+            }
+            
+            // Update WebSocket metrics
+            if (data.WebSocketManager) {
+                updateElement('ws-running', data.WebSocketManager.running ? 'Yes' : 'No');
+                updateElement('ws-clients', data.WebSocketManager.connected_clients || 0);
+                updateElement('ws-redis', data.WebSocketManager.redis_available ? 'Available' : 'Unavailable');
+                
+                // Update topic subscriptions
+                const topicList = document.getElementById('topic-subscriptions');
+                if (topicList && data.WebSocketManager.topic_subscriptions) {
+                    topicList.innerHTML = '';
+                    Object.entries(data.WebSocketManager.topic_subscriptions).forEach(([topic, count]) => {
+                        const div = document.createElement('div');
+                        div.className = 'topic-item';
+                        div.innerHTML = `<span>${topic}</span><span>${count} subscribers</span>`;
+                        topicList.appendChild(div);
+                    });
+                }
+            }
+            
+            // Update database status
+            if (data.Databases) {
+                Object.entries(data.Databases).forEach(([db, info]) => {
+                    updateElement(`db-${db}-status`, info.status || 'unknown');
+                });
+            }
+            
+            // Update engine metrics
+            if (data.Engine) {
+                updateElement('engine-hosting-url', data.Engine.hosting_url || 'N/A');
+                updateElement('engine-managers', data.Engine.managers_count || 0);
+                updateElement('engine-services', data.Engine.services_count || 0);
+            }
+        }
+        
+        function updateElement(id, value) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        }
+        
+        function startAutoRefresh() {
+            const interval = parseInt(document.getElementById('refresh-interval').value) * 1000;
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+            if (interval > 0) {
+                refreshInterval = setInterval(refreshDashboard, interval);
+                document.querySelector('.refresh-btn').textContent = 'Auto-refresh enabled';
+                setTimeout(() => {
+                    document.querySelector('.refresh-btn').textContent = 'Refresh Now';
+                }, 2000);
+            }
+        }
+        
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set initial timestamp
+            document.querySelector('.timestamp').textContent = 'Last updated: ' + new Date().toLocaleString();
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Enhanced Dashboard - {{.Name}}</h1>
+        
+        <div class="timestamp">Last updated: {{.Timestamp}}</div>
+        
+        <button class="refresh-btn" onclick="refreshDashboard()">Refresh Now</button>
+        <label>Auto-refresh: 
+            <select id="refresh-interval" onchange="startAutoRefresh()">
+                <option value="0">Disabled</option>
+                <option value="5">5 seconds</option>
+                <option value="10" selected>10 seconds</option>
+                <option value="30">30 seconds</option>
+                <option value="60">1 minute</option>
+            </select>
+        </label>
+
+        <div class="grid">
+            <!-- Queue Processing Metrics -->
+            <div class="card">
+                <h3>Queue Processing</h3>
+                <div class="metric">
+                    <span class="metric-label">Status:</span>
+                    <span class="metric-value" id="queue-running">{{if .QueueManager}}{{if .QueueManager.running}}Running{{else}}Stopped{{end}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Queue Length:</span>
+                    <span class="metric-value" id="queue-length">{{if .QueueManager}}{{.QueueManager.queue_length}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Concurrency:</span>
+                    <span class="metric-value" id="queue-concurrency">{{if .QueueManager.config}}{{.QueueManager.config.concurrency}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Batch Size:</span>
+                    <span class="metric-value" id="queue-batch-size">{{if .QueueManager.config}}{{.QueueManager.config.batch_size}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Empty Sleep:</span>
+                    <span class="metric-value">{{if .QueueManager.config}}{{.QueueManager.config.empty_queue_sleep}}{{else}}N/A{{end}}</span>
+                </div>
+            </div>
+
+            <!-- WebSocket Connections -->
+            <div class="card">
+                <h3>WebSocket Connections</h3>
+                <div class="metric">
+                    <span class="metric-label">Status:</span>
+                    <span class="metric-value" id="ws-running">{{if .WebSocketManager}}{{if .WebSocketManager.running}}Running{{else}}Stopped{{end}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Connected Clients:</span>
+                    <span class="metric-value" id="ws-clients">{{if .WebSocketManager}}{{.WebSocketManager.connected_clients}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Redis Backend:</span>
+                    <span class="metric-value" id="ws-redis">{{if .WebSocketManager}}{{if .WebSocketManager.redis_available}}Available{{else}}Unavailable{{end}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Topic Subscriptions:</span>
+                </div>
+                <div class="topic-list" id="topic-subscriptions">
+                    {{if .WebSocketManager.topic_subscriptions}}
+                        {{range $topic, $count := .WebSocketManager.topic_subscriptions}}
+                        <div class="topic-item">
+                            <span>{{$topic}}</span>
+                            <span>{{$count}} subscribers</span>
+                        </div>
+                        {{end}}
+                    {{else}}
+                        <div class="topic-item"><span>No active subscriptions</span></div>
+                    {{end}}
+                </div>
+            </div>
+
+            <!-- Storage Backend Performance -->
+            <div class="card">
+                <h3>Storage Backend</h3>
+                <div class="metric">
+                    <span class="metric-label">Type:</span>
+                    <span class="metric-value">{{.StorageType}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Status:</span>
+                    <span class="metric-value">{{.StorageStatus}}</span>
+                </div>
+                {{if .StorageConfig}}
+                <div class="metric">
+                    <span class="metric-label">Configuration:</span>
+                </div>
+                <table class="config-table">
+                    {{range $key, $value := .StorageConfig}}
+                    <tr>
+                        <td>{{$key}}</td>
+                        <td>{{$value}}</td>
+                    </tr>
+                    {{end}}
+                </table>
+                {{end}}
+            </div>
+
+            <!-- Database Status -->
+            <div class="card">
+                <h3>Database Connections</h3>
+                {{if .Databases}}
+                    {{if .Databases.sql}}
+                    <div class="metric">
+                        <span class="metric-label">SQL Database:</span>
+                        <span class="metric-value" id="db-sql-status">{{.Databases.sql.status}}</span>
+                    </div>
+                    {{end}}
+                    {{if .Databases.mongodb}}
+                    <div class="metric">
+                        <span class="metric-label">MongoDB:</span>
+                        <span class="metric-value" id="db-mongodb-status">{{.Databases.mongodb.status}}</span>
+                    </div>
+                    {{end}}
+                {{else}}
+                <div class="metric">
+                    <span class="metric-label">Status:</span>
+                    <span class="metric-value">No databases configured</span>
+                </div>
+                {{end}}
+            </div>
+
+            <!-- Engine Configuration -->
+            <div class="card">
+                <h3>Engine Configuration</h3>
+                <div class="metric">
+                    <span class="metric-label">Hosting URL:</span>
+                    <span class="metric-value" id="engine-hosting-url">{{if .Engine}}{{.Engine.hosting_url}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Topic Managers:</span>
+                    <span class="metric-value" id="engine-managers">{{if .Engine}}{{.Engine.managers_count}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Lookup Services:</span>
+                    <span class="metric-value" id="engine-services">{{if .Engine}}{{.Engine.services_count}}{{else}}N/A{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Network:</span>
+                    <span class="metric-value">{{.Network}}</span>
+                </div>
+            </div>
+
+            <!-- System Information -->
+            <div class="card">
+                <h3>System Information</h3>
+                <div class="metric">
+                    <span class="metric-label">Server Name:</span>
+                    <span class="metric-value">{{.Name}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">FQDN:</span>
+                    <span class="metric-value">{{.FQDN}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Port:</span>
+                    <span class="metric-value">{{.Port}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Admin Token:</span>
+                    <span class="metric-value">{{if .AdminTokenConfigured}}Configured{{else}}Not configured{{end}}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">GASP Sync:</span>
+                    <span class="metric-value">{{if .GASPSyncEnabled}}Enabled{{else}}Disabled{{end}}</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+            <p><a href="/">&larr; Back to Main Dashboard</a> | <a href="/health">Health Check Endpoint</a> | <a href="/ws" target="_blank">WebSocket Test</a></p>
+            <p style="color: #6c757d; font-size: 14px;">Enhanced Dashboard - Real-time monitoring for BSV Overlay Services</p>
+        </div>
+    </div>
+</body>
+</html>

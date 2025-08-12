@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>{{.Name}} - BSV Overlay Node</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
@@ -65,6 +66,21 @@
         </div>
         
         <div class="endpoint">
+            <div><span class="method">GET</span> /dashboard</div>
+            <div class="description">Enhanced real-time dashboard with detailed metrics and auto-refresh</div>
+        </div>
+        
+        <div class="endpoint">
+            <div><span class="method">GET</span> /ui</div>
+            <div class="description">Dynamic interface with interactive documentation and service discovery</div>
+        </div>
+        
+        <div class="endpoint">
+            <div><span class="method">GET</span> /test</div>
+            <div class="description">Interactive API tester with WebSocket support and live examples</div>
+        </div>
+        
+        <div class="endpoint">
             <div><span class="method">GET</span> /listTopicManagers</div>
             <div class="description">List available topic managers</div>
         </div>
@@ -77,16 +93,16 @@
         <h2>Feature Status</h2>
         <div class="info-grid">
             <div class="info-label">Storage Layer:</div>
-            <div class="info-value"><span class="status healthy">✓ Active</span> Overlay Storage Integration</div>
+            <div class="info-value"><span class="status healthy">&#10003; Active</span> Overlay Storage Integration</div>
             
             <div class="info-label">BEEF Processing:</div>
-            <div class="info-value"><span class="status healthy">✓ Active</span> Transaction Processing</div>
+            <div class="info-value"><span class="status healthy">&#10003; Active</span> Transaction Processing</div>
             
             <div class="info-label">Advanced Endpoints:</div>
-            <div class="info-value"><span class="status healthy">✓ Active</span> Overlay Services API</div>
+            <div class="info-value"><span class="status healthy">&#10003; Active</span> Overlay Services API</div>
             
             <div class="info-label">Real-time Features:</div>
-            <div class="info-value"><span class="status healthy">✓ Active</span> Queue Processing and WebSockets</div>
+            <div class="info-value"><span class="status healthy">&#10003; Active</span> Queue Processing and WebSockets</div>
         </div>
 
         <div class="footer">
