@@ -9,10 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/b-open-io/overlay/storage"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/ship"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/slap"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
+	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -60,6 +63,9 @@ type OverlayServer struct {
 
 	// Fiber app
 	App *fiber.App
+
+	// Template manager
+	TemplateManager *TemplateManager
 }
 
 // NewOverlayServer creates a new OverlayServer instance
@@ -76,6 +82,7 @@ func NewOverlayServer(name, privateKey, fqdn string) *OverlayServer {
 		Managers:         make(map[string]engine.TopicManager),
 		Services:         make(map[string]engine.LookupService),
 		MigrationsToRun:  make([]Migration, 0),
+		TemplateManager:  NewTemplateManager(),
 	}
 }
 
@@ -386,6 +393,11 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 
 // Setup initializes the Fiber app and middleware
 func (s *OverlayServer) Setup() error {
+	// Load HTML templates
+	if err := s.TemplateManager.LoadTemplates(); err != nil {
+		return fmt.Errorf("failed to load templates: %w", err)
+	}
+
 	s.App = fiber.New(fiber.Config{
 		ErrorHandler: s.errorHandler,
 	})
@@ -502,29 +514,69 @@ func (s *OverlayServer) handleWebUI(c *fiber.Ctx) error {
 
 	// Check engine status
 	engineStatus := "not_configured"
+	storageType := "unknown"
 	if s.Engine != nil {
 		if s.Engine.Storage != nil {
 			engineStatus = "configured_with_storage"
+
+			// Try to determine storage type
+			if _, ok := s.Engine.Storage.(storage.EventDataStorage); ok {
+				storageType = "overlay_storage"
+			} else {
+				storageType = "basic_storage"
+			}
 		} else {
 			engineStatus = "configured_no_storage"
 		}
 	}
 
-	return c.JSON(fiber.Map{
-		"name":                     s.Name,
-		"network":                  s.Network,
-		"fqdn":                     s.AdvertisableFQDN,
-		"status":                   "running",
-		"database_status":          databaseStatus,
-		"engine_status":            engineStatus,
-		"message":                  "Go Overlay Fiber Server - Phase 1 Complete: Missing Configuration Methods Added",
-		"phase":                    "1",
-		"topic_managers":           len(s.Managers),
-		"lookup_services":          len(s.Services),
-		"migrations_count":         len(s.MigrationsToRun),
-		"webui_configured":         s.WebUIConfig.Host != "",
-		"chain_tracker_configured": s.ChainTracker != nil,
-	})
+	// Prepare template data
+	data := MainPageData{
+		Name:           s.Name,
+		Network:        s.Network,
+		DatabaseStatus: databaseStatus,
+		EngineStatus:   engineStatus,
+		StatusClass:    getStatusClass(engineStatus),
+		StatusText:     getStatusText(engineStatus),
+		StorageType:    storageType,
+	}
+
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("main", data)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Template rendering failed: " + err.Error(),
+		})
+	}
+
+	// Set content type to HTML
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+// Helper function to get CSS class for status
+func getStatusClass(status string) string {
+	switch status {
+	case "configured_with_storage":
+		return "healthy"
+	case "configured_no_storage":
+		return "warning"
+	default:
+		return "error"
+	}
+}
+
+// Helper function to get human-readable status text
+func getStatusText(status string) string {
+	switch status {
+	case "configured_with_storage":
+		return "Active"
+	case "configured_no_storage":
+		return "Configured"
+	default:
+		return "Not Configured"
+	}
 }
 
 func (s *OverlayServer) handleHealthCheck(c *fiber.Ctx) error {
@@ -584,33 +636,59 @@ func (s *OverlayServer) handleHealthCheck(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleListTopicManagers(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 4
-	return c.JSON(fiber.Map{
-		"topicManagers": []string{},
-		"message":       "Topic managers will be implemented in Phase 4",
-	})
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("topic-managers", nil)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
 }
 
 func (s *OverlayServer) handleListLookupServiceProviders(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 4
-	return c.JSON(fiber.Map{
-		"lookupServices": []string{},
-		"message":        "Lookup services will be implemented in Phase 4",
-	})
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("lookup-services", nil)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
 }
 
 func (s *OverlayServer) handleGetTopicManagerDocs(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 4
-	return c.JSON(fiber.Map{
-		"documentation": "Topic manager documentation will be available in Phase 4",
-	})
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("topic-manager-docs", nil)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
 }
 
 func (s *OverlayServer) handleGetLookupServiceDocs(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 4
-	return c.JSON(fiber.Map{
-		"documentation": "Lookup service documentation will be available in Phase 4",
-	})
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("lookup-service-docs", nil)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
 }
 
 func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
@@ -665,18 +743,145 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleLookup(c *fiber.Ctx) error {
-	// TODO: Implement lookup queries in Phase 3
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse JSON body into EventQuestion
+	var question storage.EventQuestion
+	if err := c.BodyParser(&question); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid lookup query: " + err.Error(),
+		})
+	}
+
+	// Validate that we have at least one event to query
+	if question.Event == "" && len(question.Events) == 0 {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "At least one event must be specified (event or events field)",
+		})
+	}
+
+	// Type assert storage to EventDataStorage interface
+	eventDataStorage, ok := s.Engine.Storage.(storage.EventDataStorage)
+	if !ok {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Storage does not support event-based lookups",
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Perform the lookup with data included by default
+	results, err := eventDataStorage.LookupOutpoints(ctx, &question, true)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Lookup failed: " + err.Error(),
+		})
+	}
+
+	// Return successful results
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Lookup endpoint will be implemented in Phase 3",
+		"status":  "success",
+		"results": results,
+		"count":   len(results),
 	})
 }
 
+// ARCIngestRequest represents the payload structure for ARC webhook ingestion
+type ARCIngestRequest struct {
+	TxID        string `json:"txid"`
+	MerklePath  string `json:"merklePath"`
+	BlockHeight uint32 `json:"blockHeight"`
+}
+
 func (s *OverlayServer) handleARCIngest(c *fiber.Ctx) error {
-	// TODO: Implement ARC webhook processing in Phase 3
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse JSON body into ARCIngestRequest
+	var request ARCIngestRequest
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid ARC ingest payload: " + err.Error(),
+		})
+	}
+
+	// Validate required fields
+	if request.TxID == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "txid field is required",
+		})
+	}
+
+	if request.MerklePath == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "merklePath field is required",
+		})
+	}
+
+	if request.BlockHeight == 0 {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "blockHeight must be a positive integer (greater than 0)",
+		})
+	}
+
+	// Parse transaction ID from hex
+	txid, err := chainhash.NewHashFromHex(request.TxID)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid transaction ID format: " + err.Error(),
+		})
+	}
+
+	// Parse merkle path from hex
+	merklePath, err := transaction.NewMerklePathFromHex(request.MerklePath)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid merkle path format: " + err.Error(),
+		})
+	}
+
+	// Set block height on merkle path
+	merklePath.BlockHeight = request.BlockHeight
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.HandleNewMerkleProof
+	err = s.Engine.HandleNewMerkleProof(ctx, txid, merklePath)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to process merkle proof: " + err.Error(),
+		})
+	}
+
+	// Return success response
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "ARC ingest endpoint will be implemented in Phase 3",
+		"status":  "success",
+		"message": "Transaction status updated successfully",
+		"txid":    request.TxID,
 	})
 }
 

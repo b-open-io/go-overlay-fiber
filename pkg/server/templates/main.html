@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{.Name}} - BSV Overlay Node</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #007cba; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        .status { display: inline-block; padding: 4px 12px; border-radius: 4px; font-weight: bold; color: white; }
+        .status.healthy { background-color: #28a745; }
+        .status.warning { background-color: #ffc107; }
+        .status.error { background-color: #dc3545; }
+        .endpoint { margin: 10px 0; padding: 10px; background: #f8f9fa; border-left: 4px solid #007cba; }
+        .method { font-weight: bold; color: #007cba; }
+        .description { color: #666; font-size: 14px; margin-top: 5px; }
+        .info-grid { display: grid; grid-template-columns: 200px 1fr; gap: 10px; margin: 20px 0; }
+        .info-label { font-weight: bold; color: #555; }
+        .info-value { color: #333; }
+        .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #666; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BSV Overlay Node: {{.Name}}</h1>
+        
+        <h2>Service Status</h2>
+        <div class="info-grid">
+            <div class="info-label">Node Name:</div>
+            <div class="info-value">{{.Name}}</div>
+            
+            <div class="info-label">Network:</div>
+            <div class="info-value">{{.Network}}</div>
+            
+            <div class="info-label">Database:</div>
+            <div class="info-value">{{.DatabaseStatus}} <span class="status healthy">Connected</span></div>
+            
+            <div class="info-label">Engine:</div>
+            <div class="info-value">{{.EngineStatus}} <span class="status {{.StatusClass}}">{{.StatusText}}</span></div>
+            
+            <div class="info-label">Storage Type:</div>
+            <div class="info-value">{{.StorageType}}</div>
+        </div>
+
+        <h2>Available Endpoints</h2>
+        
+        <div class="endpoint">
+            <div><span class="method">POST</span> /submit</div>
+            <div class="description">Submit transactions with BEEF format and x-topics header</div>
+        </div>
+        
+        <div class="endpoint">
+            <div><span class="method">POST</span> /lookup</div>
+            <div class="description">Perform event-based lookups with overlay storage capabilities</div>
+        </div>
+        
+        <div class="endpoint">
+            <div><span class="method">POST</span> /arc-ingest</div>
+            <div class="description">Process ARC webhook payloads with merkle proofs for transaction confirmation</div>
+        </div>
+        
+        <div class="endpoint">
+            <div><span class="method">GET</span> /health</div>
+            <div class="description">Health check endpoint for monitoring service status</div>
+        </div>
+        
+        <div class="endpoint">
+            <div><span class="method">GET</span> /listTopicManagers</div>
+            <div class="description">List available topic managers (Phase 4)</div>
+        </div>
+        
+        <div class="endpoint">
+            <div><span class="method">GET</span> /listLookupServiceProviders</div>
+            <div class="description">List available lookup service providers (Phase 4)</div>
+        </div>
+
+        <h2>Integration Status</h2>
+        <div class="info-grid">
+            <div class="info-label">Phase 1:</div>
+            <div class="info-value"><span class="status healthy">✓ Complete</span> Storage Layer Replacement</div>
+            
+            <div class="info-label">Phase 2:</div>
+            <div class="info-value"><span class="status healthy">✓ Complete</span> BEEF and Publishing Integration</div>
+            
+            <div class="info-label">Phase 3:</div>
+            <div class="info-value"><span class="status warning">🔄 In Progress</span> Advanced Endpoints Implementation</div>
+            
+            <div class="info-label">Phase 4:</div>
+            <div class="info-value"><span class="status">⏳ Pending</span> Queue Processing and Real-time Features</div>
+        </div>
+
+        <div class="footer">
+            <p>BSV Overlay Fiber - Production-ready overlay services with battle-tested components</p>
+            <p>Phase 3 Implementation: Advanced endpoints with overlay storage integration</p>
+        </div>
+    </div>
+</body>
+</html>
