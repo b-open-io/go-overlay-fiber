@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/b-open-io/overlay/publish"
 	"github.com/b-open-io/overlay/storage"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/ship"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/slap"
@@ -66,6 +67,10 @@ type OverlayServer struct {
 
 	// Template manager
 	TemplateManager *TemplateManager
+
+	// Queue processing and real-time features
+	QueueManager     *QueueManager
+	WebSocketManager *WebSocketManager
 }
 
 // NewOverlayServer creates a new OverlayServer instance
@@ -328,6 +333,12 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 
 	s.Logger.Printf("Engine configured with hosting URL: %s, storage: SQL, managers: %d, services: %d",
 		s.AdvertisableFQDN, len(s.Engine.Managers), len(s.Engine.LookupServices))
+
+	// Initialize queue processing and WebSocket management
+	if err := s.initializeBackgroundServices(); err != nil {
+		s.Logger.Printf("Warning: Failed to initialize background services: %v", err)
+	}
+
 	return s
 }
 
@@ -391,6 +402,34 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	}
 }
 
+// initializeBackgroundServices initializes queue processing and WebSocket management
+func (s *OverlayServer) initializeBackgroundServices() error {
+	// Get publisher from overlay storage adapter
+	var publisher publish.Publisher
+	if overlayAdapter, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+		publisher = overlayAdapter.GetPublisher()
+	} else if sqlWrapper, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
+		publisher = sqlWrapper.GetPublisher()
+	}
+
+	// Initialize queue manager
+	queueManager, err := NewQueueManager(s.Engine, publisher, s.Logger)
+	if err != nil {
+		return fmt.Errorf("failed to create queue manager: %w", err)
+	}
+	s.QueueManager = queueManager
+
+	// Initialize WebSocket manager
+	webSocketManager, err := NewWebSocketManager(publisher, s.Logger)
+	if err != nil {
+		return fmt.Errorf("failed to create WebSocket manager: %w", err)
+	}
+	s.WebSocketManager = webSocketManager
+
+	s.Logger.Printf("Background services initialized successfully")
+	return nil
+}
+
 // Setup initializes the Fiber app and middleware
 func (s *OverlayServer) Setup() error {
 	// Load HTML templates
@@ -431,6 +470,9 @@ func (s *OverlayServer) setupRoutes() {
 	s.App.Get("/getDocumentationForLookupServiceProvider", s.handleGetLookupServiceDocs)
 	s.App.Post("/submit", s.handleSubmit)
 	s.App.Post("/lookup", s.handleLookup)
+
+	// WebSocket endpoint for real-time events
+	s.App.Get("/ws", s.handleWebSocketUpgrade)
 
 	// ARC webhook endpoint (if API key configured)
 	if s.ARCAPIKey != "" {
@@ -496,7 +538,7 @@ func (s *OverlayServer) errorHandler(c *fiber.Ctx, err error) error {
 	})
 }
 
-// Route handlers (placeholders for Phase 1)
+// Route handlers
 
 func (s *OverlayServer) handleWebUI(c *fiber.Ctx) error {
 	// Check database status
@@ -579,6 +621,17 @@ func getStatusText(status string) string {
 	}
 }
 
+func (s *OverlayServer) handleWebSocketUpgrade(c *fiber.Ctx) error {
+	if s.WebSocketManager == nil {
+		return c.Status(503).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "WebSocket support not available",
+		})
+	}
+
+	return s.WebSocketManager.HandleWebSocketUpgrade(c)
+}
+
 func (s *OverlayServer) handleHealthCheck(c *fiber.Ctx) error {
 	ctx := context.Background()
 
@@ -625,6 +678,20 @@ func (s *OverlayServer) handleHealthCheck(c *fiber.Ctx) error {
 		healthStatus["engine"] = engineHealth
 	} else {
 		healthStatus["engine"] = fiber.Map{"status": "not_configured"}
+	}
+
+	// Check queue manager status
+	if s.QueueManager != nil {
+		healthStatus["queue_manager"] = s.QueueManager.GetStatus()
+	} else {
+		healthStatus["queue_manager"] = fiber.Map{"status": "not_configured"}
+	}
+
+	// Check WebSocket manager status
+	if s.WebSocketManager != nil {
+		healthStatus["websocket_manager"] = s.WebSocketManager.GetStats()
+	} else {
+		healthStatus["websocket_manager"] = fiber.Map{"status": "not_configured"}
 	}
 
 	status := 200
@@ -707,18 +774,18 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 		topics[i] = strings.TrimSpace(topics[i])
 	}
 
-	// Create TaggedBEEF from body
-	taggedBEEF := overlay.TaggedBEEF{
-		Beef:   c.Body(),
-		Topics: topics,
-	}
-
-	// Check if Engine is configured
+	// Check if Engine is configured first
 	if s.Engine == nil {
 		return c.Status(500).JSON(ErrorResponse{
 			Status:  "error",
 			Message: "Engine not configured",
 		})
+	}
+
+	// Create TaggedBEEF from body
+	taggedBEEF := overlay.TaggedBEEF{
+		Beef:   c.Body(),
+		Topics: topics,
 	}
 
 	// Create context
@@ -732,6 +799,37 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 			Status:  "error",
 			Message: "Submit failed: " + err.Error(),
 		})
+	}
+
+	// Parse BEEF to get transaction ID (after successful engine submission)
+	_, _, txid, err := transaction.ParseBeef(c.Body())
+	if err != nil {
+		// If BEEF parsing fails but engine submission succeeded, log warning but continue
+		s.Logger.Printf("Warning: BEEF parsing failed after successful submission: %v", err)
+		txid = nil
+	}
+
+	// Enqueue transaction for background processing if queue manager is available
+	if s.QueueManager != nil && txid != nil {
+		// Enqueue with default values - in production, these would come from the submission context
+		if err := s.QueueManager.EnqueueTransaction(txid, 0, 0); err != nil {
+			s.Logger.Printf("Warning: Failed to enqueue transaction for processing: %v", err)
+		}
+	}
+
+	// Broadcast submission event via WebSocket if available
+	if s.WebSocketManager != nil && txid != nil {
+		submissionEvent := WebSocketMessage{
+			Type:  "transaction_submitted",
+			Topic: "all",
+			Data: fiber.Map{
+				"txid":   txid.String(),
+				"topics": topics,
+				"steak":  result,
+			},
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		}
+		s.WebSocketManager.BroadcastToAll(submissionEvent)
 	}
 
 	// Return success with steak information
@@ -886,42 +984,42 @@ func (s *OverlayServer) handleARCIngest(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleRequestSyncResponse(c *fiber.Ctx) error {
-	// TODO: Implement GASP sync in Phase 4
+	// TODO: Implement GASP sync functionality
 	return c.JSON(fiber.Map{
 		"status":  "placeholder",
-		"message": "Sync response endpoint will be implemented in Phase 4",
+		"message": "Sync response endpoint is not yet implemented",
 	})
 }
 
 func (s *OverlayServer) handleRequestForeignGASPNode(c *fiber.Ctx) error {
-	// TODO: Implement GASP sync in Phase 4
+	// TODO: Implement GASP sync functionality
 	return c.JSON(fiber.Map{
 		"status":  "placeholder",
-		"message": "Foreign GASP node endpoint will be implemented in Phase 4",
+		"message": "Foreign GASP node endpoint is not yet implemented",
 	})
 }
 
 func (s *OverlayServer) handleSyncAdvertisements(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 5
+	// TODO: Implement sync advertisements functionality
 	return c.JSON(fiber.Map{
 		"status":  "placeholder",
-		"message": "Sync advertisements endpoint will be implemented in Phase 5",
+		"message": "Sync advertisements endpoint is not yet implemented",
 	})
 }
 
 func (s *OverlayServer) handleStartGASPSync(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 5
+	// TODO: Implement GASP sync start functionality
 	return c.JSON(fiber.Map{
 		"status":  "placeholder",
-		"message": "Start GASP sync endpoint will be implemented in Phase 5",
+		"message": "Start GASP sync endpoint is not yet implemented",
 	})
 }
 
 func (s *OverlayServer) handleEvictOutpoint(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 5
+	// TODO: Implement evict outpoint functionality
 	return c.JSON(fiber.Map{
 		"status":  "placeholder",
-		"message": "Evict outpoint endpoint will be implemented in Phase 5",
+		"message": "Evict outpoint endpoint is not yet implemented",
 	})
 }
 
@@ -1010,6 +1108,19 @@ func (s *OverlayServer) Start() error {
 	s.Logger.Printf("GASP Sync: %t", s.EnableGASPSync)
 	s.Logger.Printf("Verbose Logging: %t", s.VerboseLogging)
 
+	// Start background services
+	if s.QueueManager != nil {
+		if err := s.QueueManager.Start(); err != nil {
+			s.Logger.Printf("Warning: Failed to start queue manager: %v", err)
+		}
+	}
+
+	if s.WebSocketManager != nil {
+		if err := s.WebSocketManager.Start(); err != nil {
+			s.Logger.Printf("Warning: Failed to start WebSocket manager: %v", err)
+		}
+	}
+
 	// Perform initial health check
 	if err := s.CheckDatabaseHealth(ctx); err != nil {
 		s.Logger.Printf("Warning: Database health check failed: %v", err)
@@ -1022,6 +1133,19 @@ func (s *OverlayServer) Start() error {
 func (s *OverlayServer) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Stop background services
+	if s.QueueManager != nil {
+		if err := s.QueueManager.Stop(); err != nil {
+			s.Logger.Printf("Error stopping queue manager: %v", err)
+		}
+	}
+
+	if s.WebSocketManager != nil {
+		if err := s.WebSocketManager.Stop(); err != nil {
+			s.Logger.Printf("Error stopping WebSocket manager: %v", err)
+		}
+	}
 
 	// Disconnect from databases
 	if s.DB != nil {

@@ -1,3 +1,4 @@
 /.claude
 /go-overlay-fiber
 /demo
+*.db*

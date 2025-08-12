@@ -90,7 +90,7 @@ func CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL string, db *sql.
 type NoOpPublisher struct{}
 
 func (p *NoOpPublisher) Publish(ctx context.Context, topic string, data string) error {
-	// No-op implementation for Phase 1
+	// No-op implementation
 	_ = ctx
 	_ = topic
 	_ = data
@@ -100,14 +100,20 @@ func (p *NoOpPublisher) Publish(ctx context.Context, topic string, data string) 
 // createOverlayPublisher creates a publisher using overlay patterns
 func createOverlayPublisher(publisherURL string) (publish.Publisher, error) {
 	if publisherURL == "" {
-		// Default to no-op publisher for Phase 1
+		// Default to no-op publisher if no URL provided
 		return &NoOpPublisher{}, nil
 	}
 
 	// Parse URL to determine publisher type
 	if strings.HasPrefix(publisherURL, "redis://") {
-		// Redis publisher - Phase 2
-		return &NoOpPublisher{}, nil // Placeholder for Phase 1
+		// Create Redis publisher for production use
+		redisPublisher, err := publish.NewRedisPublish(publisherURL)
+		if err != nil {
+			log.Printf("Failed to create Redis publisher, falling back to no-op: %v", err)
+			return &NoOpPublisher{}, nil
+		}
+		log.Printf("Redis publisher created successfully")
+		return redisPublisher, nil
 	}
 
 	// Unknown scheme, default to no-op
@@ -189,7 +195,7 @@ func (s *SQLStorageWrapper) GetLastInteraction(ctx context.Context, host string,
 }
 
 // Implement overlay storage.EventDataStorage specific methods
-// These are placeholder implementations for Phase 1
+// These are placeholder implementations
 func (s *SQLStorageWrapper) GetTransactionsByTopicAndHeight(ctx context.Context, topic string, height uint32) ([]*storage.TransactionData, error) {
 	return nil, fmt.Errorf("GetTransactionsByTopicAndHeight not implemented in SQL wrapper")
 }
