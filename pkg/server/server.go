@@ -962,75 +962,71 @@ func (s *OverlayServer) handleListLookupServiceProviders(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleGetTopicManagerDocs(c *fiber.Ctx) error {
-	// Check if this is an AJAX request from the dynamic interface
-	isAjax := c.Get("X-Requested-With") == "XMLHttpRequest" || c.Query("format") == "fragment"
-
-	if isAjax {
-		// Return just the content fragment for dynamic interface
-		managerName := c.Query("manager", "unknown")
-		data := map[string]interface{}{
-			"Name": managerName,
-		}
-
-		html, err := s.TemplateManager.RenderTemplate("topic-manager-fragment", data)
-		if err != nil {
-			return c.Status(500).JSON(ErrorResponse{
-				Status:  "error",
-				Message: "Template rendering failed: " + err.Error(),
-			})
-		}
-
-		c.Set("Content-Type", "text/html")
-		return c.SendString(html)
-	}
-
-	// Render full template for direct access
-	html, err := s.TemplateManager.RenderTemplate("topic-manager-docs", nil)
-	if err != nil {
-		return c.Status(500).JSON(ErrorResponse{
+	// Get the manager name from query parameter
+	managerName := c.Query("manager", "")
+	if managerName == "" {
+		return c.Status(400).JSON(ErrorResponse{
 			Status:  "error",
-			Message: "Template rendering failed: " + err.Error(),
+			Message: "manager query parameter is required",
 		})
 	}
 
-	c.Set("Content-Type", "text/html")
-	return c.SendString(html)
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Use the generic interface method to get documentation
+	documentation, err := s.Engine.GetDocumentationForTopicManager(managerName)
+	if err != nil {
+		return c.Status(404).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Documentation not found for topic manager: " + managerName,
+		})
+	}
+
+	// Return raw markdown with text/markdown content type (matching overlay-express)
+	c.Set("Content-Type", "text/markdown")
+	return c.SendString(documentation)
 }
 
 func (s *OverlayServer) handleGetLookupServiceDocs(c *fiber.Ctx) error {
-	// Check if this is an AJAX request from the dynamic interface
-	isAjax := c.Get("X-Requested-With") == "XMLHttpRequest" || c.Query("format") == "fragment"
-
-	if isAjax {
-		// Return just the content fragment for dynamic interface
-		providerName := c.Query("provider", "unknown")
-		data := map[string]interface{}{
-			"Name": providerName,
-		}
-
-		html, err := s.TemplateManager.RenderTemplate("lookup-service-fragment", data)
-		if err != nil {
-			return c.Status(500).JSON(ErrorResponse{
-				Status:  "error",
-				Message: "Template rendering failed: " + err.Error(),
-			})
-		}
-
-		c.Set("Content-Type", "text/html")
-		return c.SendString(html)
+	// Get the provider name from query parameter
+	providerName := c.Query("provider", "")
+	if providerName == "" {
+		// Try legacy parameter name for compatibility
+		providerName = c.Query("lookupService", "")
 	}
-
-	// Render full template for direct access
-	html, err := s.TemplateManager.RenderTemplate("lookup-service-docs", nil)
-	if err != nil {
-		return c.Status(500).JSON(ErrorResponse{
+	if providerName == "" {
+		return c.Status(400).JSON(ErrorResponse{
 			Status:  "error",
-			Message: "Template rendering failed: " + err.Error(),
+			Message: "provider or lookupService query parameter is required",
 		})
 	}
 
-	c.Set("Content-Type", "text/html")
-	return c.SendString(html)
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Use the generic interface method to get documentation
+	documentation, err := s.Engine.GetDocumentationForLookupServiceProvider(providerName)
+	if err != nil {
+		return c.Status(404).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Documentation not found for lookup service provider: " + providerName,
+		})
+	}
+
+	// Return raw markdown with text/markdown content type (matching overlay-express)
+	c.Set("Content-Type", "text/markdown")
+	return c.SendString(documentation)
 }
 
 func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
