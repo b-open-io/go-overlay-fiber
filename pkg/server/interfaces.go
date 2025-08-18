@@ -2,12 +2,12 @@ package server
 
 import (
 	"database/sql"
-	"github.com/bsv-blockchain/go-sdk/overlay/topic"
-	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/advertiser"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
+	"github.com/bsv-blockchain/go-sdk/overlay/topic"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -57,8 +57,6 @@ type ErrorResponse struct {
 type Script struct {
 	Data []byte `json:"data"`
 }
-
-// Note: Advertiser interface is now imported from go-overlay-services/pkg/core/advertiser
 
 // Migration represents a database migration
 type Migration struct {

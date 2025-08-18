@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -19,10 +20,12 @@ import (
 	"github.com/bsv-blockchain/go-sdk/overlay"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
+	"github.com/bsv-blockchain/go-sdk/util"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -75,11 +78,21 @@ type OverlayServer struct {
 }
 
 // NewOverlayServer creates a new OverlayServer instance
-func NewOverlayServer(name, privateKey, fqdn string) *OverlayServer {
+// adminToken is optional - if empty, a random UUID will be generated
+func NewOverlayServer(name, privateKey, fqdn string, adminToken ...string) *OverlayServer {
+	// Generate random admin token if not provided
+	var token string
+	if len(adminToken) > 0 && adminToken[0] != "" {
+		token = adminToken[0]
+	} else {
+		token = uuid.New().String()
+	}
+
 	return &OverlayServer{
 		Name:             name,
 		PrivateKey:       privateKey,
 		AdvertisableFQDN: fqdn,
+		AdminToken:       token,
 		Port:             3000,
 		Network:          "main",
 		Logger:           log.Default(),
@@ -135,7 +148,7 @@ func (s *OverlayServer) ConfigureDatabase(driverName, connectionString string) *
 	return s
 }
 
-// ConfigureMongoDB establishes MongoDB connection (equivalent to overlay-express configureMongo)
+// ConfigureMongoDB establishes MongoDB connection
 func (s *OverlayServer) ConfigureMongoDB(connectionString string) *OverlayServer {
 	return s.ConfigureMongoDBWithDatabase(connectionString, "overlay")
 }
@@ -147,7 +160,7 @@ func (s *OverlayServer) ConfigureMongoDBWithDatabase(connectionString, database 
 		return s
 	}
 
-	// Create MongoDB client options - direct usage like overlay-express uses mongodb directly
+	// Create MongoDB client options
 	clientOptions := options.Client().ApplyURI(connectionString)
 	clientOptions.SetMaxPoolSize(100)
 	clientOptions.SetMaxConnIdleTime(5 * time.Minute)
@@ -327,7 +340,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	// Initialize the Engine with real configuration
 	s.Engine = engine.NewEngine(engineConfig)
 
-	// Auto-configure SHIP/SLAP services if requested (like overlay-express)
+	// Auto-configure SHIP/SLAP services if requested
 	if autoConfigureShipSlap {
 		s.autoConfigureDiscoveryServices()
 	}
@@ -343,7 +356,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	return s
 }
 
-// autoConfigureDiscoveryServices automatically configures SHIP and SLAP services like overlay-express
+// autoConfigureDiscoveryServices automatically configures SHIP and SLAP services
 func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	// Auto-configure SHIP topic manager if not already configured
 	if _, exists := s.Managers["tm_ship"]; !exists {
@@ -469,7 +482,7 @@ func (s *OverlayServer) Setup() error {
 // setupRoutes configures all the HTTP routes
 func (s *OverlayServer) setupRoutes() {
 	// Public routes
-	s.App.Get("/", s.handleDynamicInterface)   // Root path serves dynamic interface like overlay-express
+	s.App.Get("/", s.handleDynamicInterface)   // Root path serves dynamic interface
 	s.App.Get("/ui", s.handleDynamicInterface) // Keep for backward compatibility
 	s.App.Get("/services", s.handleWebUI)      // Move dashboard to /services
 	s.App.Get("/dashboard", s.handleDashboard)
@@ -985,7 +998,7 @@ func (s *OverlayServer) handleGetTopicManagerDocs(c *fiber.Ctx) error {
 		})
 	}
 
-	// Return raw markdown with text/markdown content type (matching overlay-express)
+	// Return raw markdown with text/markdown content type
 	c.Set("Content-Type", "text/markdown")
 	return c.SendString(documentation)
 }
@@ -1021,13 +1034,13 @@ func (s *OverlayServer) handleGetLookupServiceDocs(c *fiber.Ctx) error {
 		})
 	}
 
-	// Return raw markdown with text/markdown content type (matching overlay-express)
+	// Return raw markdown with text/markdown content type
 	c.Set("Content-Type", "text/markdown")
 	return c.SendString(documentation)
 }
 
 func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
-	// Parse x-topics header like overlay-express
+	// Parse x-topics header
 	topicsHeader := c.Get("x-topics")
 	if topicsHeader == "" {
 		return c.Status(400).JSON(ErrorResponse{
@@ -1036,11 +1049,17 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 		})
 	}
 
-	// Split topics by comma
-	topics := strings.Split(topicsHeader, ",")
-	for i := range topics {
-		topics[i] = strings.TrimSpace(topics[i])
+	// Parse topics as JSON
+	var topics []string
+	if err := json.Unmarshal([]byte(topicsHeader), &topics); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid x-topics header format (must be valid JSON array): " + err.Error(),
+		})
 	}
+
+	// Check for x-includes-off-chain-values header
+	includesOffChain := c.Get("x-includes-off-chain-values") == "true"
 
 	// Check if Engine is configured first
 	if s.Engine == nil {
@@ -1050,27 +1069,72 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create TaggedBEEF from body
+	// Process BEEF data and extract off-chain values if present
+	var beef []byte
+	var offChainValues []byte
+	bodyData := c.Body()
+
+	if includesOffChain {
+		// Extract BEEF and off-chain values using Reader
+		reader := util.NewReader(bodyData)
+		beefLength, err := reader.ReadVarInt()
+		if err != nil {
+			return c.Status(400).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Failed to read BEEF length from off-chain data: " + err.Error(),
+			})
+		}
+
+		beef, err = reader.ReadBytes(int(beefLength))
+		if err != nil {
+			return c.Status(400).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Failed to read BEEF data: " + err.Error(),
+			})
+		}
+
+		// Read remaining bytes as off-chain values
+		remainingData := reader.ReadRemaining()
+		if len(remainingData) > 0 {
+			offChainValues = remainingData
+		}
+	} else {
+		// No off-chain values, use full body as BEEF
+		beef = bodyData
+	}
+
+	// Create TaggedBEEF from processed data
 	taggedBEEF := overlay.TaggedBEEF{
-		Beef:   c.Body(),
-		Topics: topics,
+		Beef:           beef,
+		Topics:         topics,
+		OffChainValues: offChainValues,
 	}
 
 	// Create context
 	ctx := c.Context()
 
-	// Call Engine.Submit() with parsed data
-	// Use historical mode for now - this should be the standard submit mode
-	result, err := s.Engine.Submit(ctx, taggedBEEF, engine.SubmitModeHistorical, nil)
+	// Using a callback function, we can return once the STEAK is ready
+	var responseSent bool
+	result, err := s.Engine.Submit(ctx, taggedBEEF, engine.SubmitModeHistorical, func(steak *overlay.Steak) {
+		if !responseSent {
+			responseSent = true
+			c.JSON(steak)
+		}
+	})
 	if err != nil {
-		return c.Status(500).JSON(ErrorResponse{
-			Status:  "error",
-			Message: "Submit failed: " + err.Error(),
-		})
+		if !responseSent {
+			return c.Status(500).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Submit failed: " + err.Error(),
+			})
+		}
+		// If callback already sent response, just log the error
+		s.Logger.Printf("Submit error after callback response: %v", err)
+		return nil
 	}
 
 	// Parse BEEF to get transaction ID (after successful engine submission)
-	_, _, txid, err := transaction.ParseBeef(c.Body())
+	_, _, txid, err := transaction.ParseBeef(beef)
 	if err != nil {
 		// If BEEF parsing fails but engine submission succeeded, log warning but continue
 		s.Logger.Printf("Warning: BEEF parsing failed after successful submission: %v", err)
@@ -1100,12 +1164,13 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 		s.WebSocketManager.BroadcastToAll(submissionEvent)
 	}
 
-	// Return success with steak information
-	return c.JSON(fiber.Map{
-		"status":  "success",
-		"message": "Transaction submitted successfully",
-		"steak":   result,
-	})
+	// Return success with steak information if callback hasn't already sent response
+	if !responseSent {
+		return c.JSON(result)
+	}
+
+	// Response already sent by callback
+	return nil
 }
 
 func (s *OverlayServer) handleLookup(c *fiber.Ctx) error {
