@@ -14,6 +14,7 @@ import (
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/ship"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/slap"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
+	"github.com/bsv-blockchain/go-overlay-services/pkg/core/gasp"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -1169,6 +1170,20 @@ type ARCIngestRequest struct {
 	BlockHeight uint32 `json:"blockHeight"`
 }
 
+// EvictOutpointRequest represents the payload structure for evict outpoint request
+type EvictOutpointRequest struct {
+	TxID        string `json:"txid"`
+	OutputIndex uint32 `json:"outputIndex"`
+	Service     string `json:"service,omitempty"` // Optional: specific service to evict from
+}
+
+// ForeignGASPNodeRequest represents the payload structure for foreign GASP node request
+type ForeignGASPNodeRequest struct {
+	GraphID     string `json:"graphID"`     // Transaction ID for graph ID
+	TxID        string `json:"txid"`        // Transaction ID for the node
+	OutputIndex uint32 `json:"outputIndex"` // Output index for the node
+}
+
 func (s *OverlayServer) handleARCIngest(c *fiber.Ctx) error {
 	// Check if Engine is configured
 	if s.Engine == nil {
@@ -1251,42 +1266,264 @@ func (s *OverlayServer) handleARCIngest(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleRequestSyncResponse(c *fiber.Ctx) error {
-	// TODO: Implement GASP sync functionality
-	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Sync response endpoint is not yet implemented",
-	})
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse x-bsv-topic header (required for GASP sync)
+	topic := c.Get("x-bsv-topic")
+	if topic == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "x-bsv-topic header is required",
+		})
+	}
+
+	// Parse JSON body into GASP InitialRequest
+	var initialRequest gasp.InitialRequest
+	if err := c.BodyParser(&initialRequest); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid GASP initial request payload: " + err.Error(),
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.ProvideForeignSyncResponse()
+	response, err := s.Engine.ProvideForeignSyncResponse(ctx, &initialRequest, topic)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to provide foreign sync response: " + err.Error(),
+		})
+	}
+
+	// Return the InitialResponse as JSON
+	return c.JSON(response)
 }
 
 func (s *OverlayServer) handleRequestForeignGASPNode(c *fiber.Ctx) error {
-	// TODO: Implement GASP sync functionality
-	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Foreign GASP node endpoint is not yet implemented",
-	})
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse JSON body into ForeignGASPNodeRequest
+	var request ForeignGASPNodeRequest
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid foreign GASP node request payload: " + err.Error(),
+		})
+	}
+
+	// Validate required fields
+	if request.GraphID == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "graphID field is required",
+		})
+	}
+	if request.TxID == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "txid field is required",
+		})
+	}
+
+	// Parse transaction IDs from hex
+	graphIDHash, err := chainhash.NewHashFromHex(request.GraphID)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid graphID format: " + err.Error(),
+		})
+	}
+
+	txidHash, err := chainhash.NewHashFromHex(request.TxID)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid txid format: " + err.Error(),
+		})
+	}
+
+	// Create outpoints
+	graphIDOutpoint := &transaction.Outpoint{
+		Txid:  *graphIDHash,
+		Index: 0, // Graph ID typically uses output index 0
+	}
+
+	outpoint := &transaction.Outpoint{
+		Txid:  *txidHash,
+		Index: request.OutputIndex,
+	}
+
+	// Parse x-bsv-topic header (required for GASP sync)
+	topic := c.Get("x-bsv-topic")
+	if topic == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "x-bsv-topic header is required",
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.ProvideForeignGASPNode()
+	node, err := s.Engine.ProvideForeignGASPNode(ctx, graphIDOutpoint, outpoint, topic)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to provide foreign GASP node: " + err.Error(),
+		})
+	}
+
+	// Return the Node as JSON
+	return c.JSON(node)
 }
 
 func (s *OverlayServer) handleSyncAdvertisements(c *fiber.Ctx) error {
-	// TODO: Implement sync advertisements functionality
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.SyncAdvertisements()
+	err := s.Engine.SyncAdvertisements(ctx)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to sync advertisements: " + err.Error(),
+		})
+	}
+
+	// Return success response
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Sync advertisements endpoint is not yet implemented",
+		"status":  "success",
+		"message": "Advertisements synced successfully",
 	})
 }
 
 func (s *OverlayServer) handleStartGASPSync(c *fiber.Ctx) error {
-	// TODO: Implement GASP sync start functionality
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.StartGASPSync()
+	err := s.Engine.StartGASPSync(ctx)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to start GASP sync: " + err.Error(),
+		})
+	}
+
+	// Return success response
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Start GASP sync endpoint is not yet implemented",
+		"status":  "success",
+		"message": "GASP sync started and completed",
 	})
 }
 
 func (s *OverlayServer) handleEvictOutpoint(c *fiber.Ctx) error {
-	// TODO: Implement evict outpoint functionality
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse JSON body into EvictOutpointRequest
+	var request EvictOutpointRequest
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid evict outpoint payload: " + err.Error(),
+		})
+	}
+
+	// Validate required fields
+	if request.TxID == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "txid field is required",
+		})
+	}
+
+	// Parse transaction ID from hex
+	txid, err := chainhash.NewHashFromHex(request.TxID)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid transaction ID format: " + err.Error(),
+		})
+	}
+
+	// Create outpoint
+	outpoint := &transaction.Outpoint{
+		Txid:  *txid,
+		Index: request.OutputIndex,
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// If specific service is provided, evict from that service only
+	if request.Service != "" {
+		service, exists := s.Engine.LookupServices[request.Service]
+		if !exists {
+			return c.Status(404).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Service not found: " + request.Service,
+			})
+		}
+
+		err := service.OutputEvicted(ctx, outpoint)
+		if err != nil {
+			return c.Status(500).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Failed to evict outpoint from service: " + err.Error(),
+			})
+		}
+	} else {
+		// Evict from all services
+		for serviceName, service := range s.Engine.LookupServices {
+			if err := service.OutputEvicted(ctx, outpoint); err != nil {
+				// Log error but continue with other services
+				s.Logger.Printf("Warning: Failed to evict outpoint from service '%s': %v", serviceName, err)
+			}
+		}
+	}
+
+	// Return success response
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Evict outpoint endpoint is not yet implemented",
+		"status":  "success",
+		"message": "Outpoint evicted",
 	})
 }
 
