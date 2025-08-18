@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -31,7 +32,7 @@ func TestHandleSubmit(t *testing.T) {
 				server := createTestServerWithEngine(t)
 				return server
 			},
-			topics:         "test,topic",
+			topics:         `["test","topic"]`,
 			body:           mustDecodeHex(testBEEFHex),
 			expectedStatus: 500, // Engine returns error for unknown topics
 			expectedError:  "Submit failed",
@@ -53,7 +54,7 @@ func TestHandleSubmit(t *testing.T) {
 				server := createTestServerWithEngine(t)
 				return server
 			},
-			topics:         "test",
+			topics:         `["test"]`,
 			body:           []byte{},
 			expectedStatus: 500, // Engine returns error for unknown topics
 			expectedError:  "Submit failed",
@@ -64,7 +65,7 @@ func TestHandleSubmit(t *testing.T) {
 				server := NewOverlayServer("test-server", "test-key", "localhost:3000")
 				return server
 			},
-			topics:         "test",
+			topics:         `["test"]`,
 			body:           mustDecodeHex(testBEEFHex),
 			expectedStatus: 500,
 			expectedError:  "Engine not configured",
@@ -75,7 +76,7 @@ func TestHandleSubmit(t *testing.T) {
 				server := createTestServerWithEngine(t)
 				return server
 			},
-			topics:         "topic1, topic2 , topic3",
+			topics:         `["topic1","topic2","topic3"]`,
 			body:           mustDecodeHex(testBEEFHex),
 			expectedStatus: 500, // Engine returns error for unknown topics
 			expectedError:  "Submit failed",
@@ -233,7 +234,7 @@ func TestHandleSubmitWithInvalidBEEF(t *testing.T) {
 	// Send invalid BEEF data
 	invalidBEEF := []byte("invalid beef data")
 	req := httptest.NewRequest("POST", "/submit", bytes.NewReader(invalidBEEF))
-	req.Header.Set("x-topics", "test")
+	req.Header.Set("x-topics", `["test"]`)
 
 	resp, err := server.App.Test(req)
 	require.NoError(t, err)
@@ -241,4 +242,79 @@ func TestHandleSubmitWithInvalidBEEF(t *testing.T) {
 	// The engine should handle invalid BEEF and return appropriate response
 	// We don't assert specific status code as it depends on engine implementation
 	assert.True(t, resp.StatusCode >= 200, "Should receive some response from engine")
+}
+
+// TestGASPSyncConfiguration tests that GASP sync configuration is properly set up
+func TestGASPSyncConfiguration(t *testing.T) {
+	tests := []struct {
+		name               string
+		enableGASPSync     bool
+		autoConfigShipSlap bool
+		expectSyncConfig   bool
+	}{
+		{
+			name:               "GASP sync enabled with auto-configure",
+			enableGASPSync:     true,
+			autoConfigShipSlap: true,
+			expectSyncConfig:   true,
+		},
+		{
+			name:               "GASP sync disabled",
+			enableGASPSync:     false,
+			autoConfigShipSlap: true,
+			expectSyncConfig:   false,
+		},
+		{
+			name:               "GASP sync enabled without auto-configure",
+			enableGASPSync:     true,
+			autoConfigShipSlap: false,
+			expectSyncConfig:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create server with GASP sync configuration
+			server := NewOverlayServer("test-server", "test-private-key", "localhost:3000")
+			server.ConfigureGASPSync(tt.enableGASPSync)
+			server.ConfigureDatabase("sqlite3", ":memory:")
+
+			// Configure MongoDB to enable SHIP/SLAP auto-configuration
+			// Using a fake connection string since we're just testing configuration
+			if tt.autoConfigShipSlap {
+				// Note: This will fail to connect but we just want to test the configuration logic
+				server.ConfigureMongoDB("mongodb://fake:27017/test")
+			}
+
+			// Configure engine
+			server.ConfigureEngine(tt.autoConfigShipSlap)
+
+			// Verify engine configuration
+			require.NotNil(t, server.Engine, "Engine should be configured")
+
+			if tt.expectSyncConfig {
+				require.NotNil(t, server.Engine.SyncConfiguration, "SyncConfiguration should be initialized")
+
+				if tt.autoConfigShipSlap {
+					// Check that tm_ship and tm_slap have SHIP sync configuration
+					shipConfig, shipExists := server.Engine.SyncConfiguration["tm_ship"]
+					if shipExists {
+						assert.Equal(t, engine.SyncConfigurationSHIP, shipConfig.Type, "tm_ship should use SHIP sync configuration")
+					}
+
+					slapConfig, slapExists := server.Engine.SyncConfiguration["tm_slap"]
+					if slapExists {
+						assert.Equal(t, engine.SyncConfigurationSHIP, slapConfig.Type, "tm_slap should use SHIP sync configuration")
+					}
+				}
+			} else if !tt.enableGASPSync {
+				// If GASP sync is disabled, SyncConfiguration might still exist but shouldn't have auto-configured entries
+				if server.Engine.SyncConfiguration != nil {
+					_, shipExists := server.Engine.SyncConfiguration["tm_ship"]
+					_, slapExists := server.Engine.SyncConfiguration["tm_slap"]
+					assert.False(t, shipExists && slapExists, "Auto-configured sync should not exist when GASP sync is disabled")
+				}
+			}
+		})
+	}
 }

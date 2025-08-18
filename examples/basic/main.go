@@ -39,8 +39,8 @@ func main() {
 	// - Make use of functions like `ConfigureTopicManager` and `ConfigureLookupServiceWithMongo`
 	// ADD YOUR OVERLAY SERVICES HERE
 
-	// For simple local deployments, sync can be disabled.
-	overlayServer.ConfigureGASPSync(false)
+	// Enable GASP sync for testing
+	overlayServer.ConfigureGASPSync(true)
 
 	// Configure the engine with auto-configuration for SHIP/SLAP services (like overlay-express)
 	overlayServer.ConfigureEngine(true)

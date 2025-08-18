@@ -307,6 +307,12 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	}
 	s.Logger.Printf("Using overlay storage with EVENT_STORAGE=%s, BEEF_STORAGE=%s", eventStorageURL, beefStorageURL)
 
+	// Initialize SyncConfiguration if needed for GASP sync
+	syncConfig := s.EngineConfig.SyncConfiguration
+	if syncConfig == nil && s.EnableGASPSync {
+		syncConfig = make(map[string]engine.SyncConfiguration)
+	}
+
 	// Create Engine configuration with real storage
 	engineConfig := engine.Engine{
 		HostingURL:           s.AdvertisableFQDN,
@@ -317,7 +323,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		ChainTracker:         s.ChainTracker,
 		Broadcaster:          s.EngineConfig.Broadcaster,
 		Advertiser:           s.EngineConfig.Advertiser,
-		SyncConfiguration:    s.EngineConfig.SyncConfiguration,
+		SyncConfiguration:    syncConfig,
 		BroadcastFacilitator: s.EngineConfig.OverlayBroadcastFacilitator,
 	}
 
@@ -401,6 +407,34 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 
 			s.ConfigureLookupService("ls_slap", slapLookupService)
 			s.Logger.Printf("Auto-configured SLAP lookup service with MongoDB")
+		}
+	}
+
+	// Configure sync configuration when GASP sync is enabled
+	if s.EnableGASPSync && s.Engine != nil {
+		// Initialize SyncConfiguration map if needed
+		if s.Engine.SyncConfiguration == nil {
+			s.Engine.SyncConfiguration = make(map[string]engine.SyncConfiguration)
+		}
+
+		// Configure tm_ship for SHIP discovery sync if it was auto-configured
+		if _, exists := s.Managers["tm_ship"]; exists {
+			if _, syncExists := s.Engine.SyncConfiguration["tm_ship"]; !syncExists {
+				s.Engine.SyncConfiguration["tm_ship"] = engine.SyncConfiguration{
+					Type: engine.SyncConfigurationSHIP,
+				}
+				s.Logger.Printf("Auto-configured SHIP sync for tm_ship topic manager")
+			}
+		}
+
+		// Configure tm_slap for SHIP discovery sync if it was auto-configured
+		if _, exists := s.Managers["tm_slap"]; exists {
+			if _, syncExists := s.Engine.SyncConfiguration["tm_slap"]; !syncExists {
+				s.Engine.SyncConfiguration["tm_slap"] = engine.SyncConfiguration{
+					Type: engine.SyncConfigurationSHIP,
+				}
+				s.Logger.Printf("Auto-configured SHIP sync for tm_slap topic manager")
+			}
 		}
 	}
 
@@ -1689,6 +1723,26 @@ func (s *OverlayServer) Start() error {
 	// Perform initial health check
 	if err := s.CheckDatabaseHealth(ctx); err != nil {
 		s.Logger.Printf("Warning: Database health check failed: %v", err)
+	}
+
+	// Automatic startup synchronization (matching overlay-express behavior)
+	if s.Engine != nil {
+		// Attempt to sync advertisements
+		if err := s.Engine.SyncAdvertisements(ctx); err != nil {
+			s.Logger.Printf("Warning: Error syncing advertisements: %v", err)
+		}
+
+		// Attempt to do GASP sync if enabled
+		if s.EnableGASPSync {
+			s.Logger.Printf("Starting GASP sync...")
+			if err := s.Engine.StartGASPSync(ctx); err != nil {
+				s.Logger.Printf("Warning: Failed to GASP sync: %v", err)
+			} else {
+				s.Logger.Printf("GASP sync complete!")
+			}
+		} else {
+			s.Logger.Printf("%s will not sync because GASP has been disabled.", s.Name)
+		}
 	}
 
 	return s.App.Listen(fmt.Sprintf(":%d", s.Port))
