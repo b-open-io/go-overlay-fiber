@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{.Name}} - Overlay Services</title>
+  <link rel="icon" type="image/x-icon" href="https://bsvblockchain.org/favicon.ico">
+  <style>
+    :root {
+      --background-color: #191919;
+      --primary-color: #3b6efb;
+      --secondary-color: #001242;
+      --font-family: Helvetica, Arial, sans-serif;
+      --heading-font-family: Helvetica, Arial, sans-serif;
+      --section-background-color: #323940;
+      --link-color: #579DFF;
+      --hover-color: #3A4147;
+      --border-color: #B6C2CF;
+      --secondary-background-color: #f8f8f8;
+      --secondary-text-color: #0e0e0e;
+      --primary-text-color: #f0f0f0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      background-color: var(--background-color);
+      margin: 0;
+      padding: 0;
+      color: var(--primary-text-color);
+    }
+
+    h1, h2, h3 {
+      font-family: var(--heading-font-family);
+    }
+
+    p {
+      line-height: 1.5;
+    }
+
+    .welcome {
+      background-clip: text;
+      color: transparent;
+      background-image: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+      cursor: pointer;
+    }
+
+    a {
+      color: var(--link-color);
+      text-decoration: none;
+    }
+
+    a:hover {
+      color: var(--secondary-color);
+    }
+
+    .main {
+      display: flex;
+      flex-direction: row;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .column_right {
+      padding: 1.5em;
+      overflow-y: auto;
+    }
+
+    .column_left {
+      padding: 15px 15px 15px 35px;
+      overflow-y: auto;
+      width: 360px;
+      background-color: var(--secondary-background-color);
+      color: var(--secondary-text-color);
+    }
+
+    .column_right {
+      width: calc(100% - 360px);
+    }
+
+    #documentation_container {
+      padding: 0 8em;
+      margin: 0;
+    }
+
+    /* List styles */
+    .list-item {
+      margin: 0;
+    }
+
+    .list-item a {
+      display: block;
+      width: 100%;
+      padding: 0.5em 0.75em;
+      background-color: transparent;
+      border-radius: 5px;
+      transition: background-color 0.3s;
+      text-decoration: none;
+      color: inherit;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .list-item a:hover, .list-item a.active {
+      background: var(--primary-color) linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      cursor: pointer;
+      border-radius: 8px 0 0 8px;
+    }
+    
+    ul#manager_list, ul#provider_list, ul#external_list {
+      list-style-type: none;
+      padding-left: 0;
+      margin-top: 0.5em;
+    }
+
+    /* Detail styles */
+    .detail-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 1em;
+    }
+
+    .detail-icon {
+      width: 60px;
+      height: 60px;
+      margin-right: 1em;
+    }
+
+    .detail-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .detail-title {
+      margin: 0;
+    }
+
+    .detail-description, .detail-version, .detail-info {
+      margin: 0.2em 0;
+    }
+
+    .detail-info a {
+      color: var(--link-color);
+    }
+
+    /* Code highlighting styles */
+    pre {
+      position: relative;
+      padding: 1em;
+      border-radius: 5px;
+      overflow: auto;
+      background-color: #282c34;
+      margin: 1em 0;
+    }
+    
+    pre[data-language]:before {
+      content: attr(data-language);
+      position: absolute;
+      top: 0;
+      right: 0;
+      padding: 0.25em 0.5em;
+      font-size: 0.75em;
+      color: #abb2bf;
+      background-color: #3e4451;
+      border-radius: 0 0 0 4px;
+      text-transform: uppercase;
+    }
+    
+    code {
+      font-family: Menlo, Monaco, 'Courier New', monospace;
+      font-size: 0.9em;
+    }
+    
+    /* Inline code */
+    p code, li code {
+      background-color: #3e4451;
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    /* Responsive design */
+    @media screen and (max-width: 850px) {
+      .main {
+        flex-direction: column;
+      }
+
+      .column_left {
+        max-height: 30vh;
+      }
+
+      .column_left, .column_right {
+        width: 90%;
+        margin: 0;
+        padding: 0 5%;
+      }
+
+      #documentation_container {
+        margin: 0;
+        padding: 0;
+      }
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/showdown@2.0.3/dist/showdown.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.7.0/build/styles/atom-one-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.7.0/build/highlight.min.js"></script>
+  <script>
+    const faviconUrl = 'https://bsvblockchain.org/favicon.ico';
+    const showdown = window.showdown;
+    window.hljs.configure({ languages: ['typescript', 'javascript', 'json', 'html', 'css', 'bash', 'markdown'] });
+
+    const Convert = (md) => {
+      let converter = new showdown.Converter({
+        ghCompatibleHeaderId: true,
+        simpleLineBreaks: true,
+        ghMentions: true,
+        tables: true,
+        tasklists: true,
+        strikethrough: true,
+        parseImgDimensions: true,
+        simplifiedAutoLink: true
+      });
+      // Set to use GitHub flavor markdown
+      converter.setFlavor('github');
+      
+      // Set language detection for code blocks
+      converter.setOption('ghCodeBlocks', true);
+      converter.setOption('omitExtraWLInCodeBlocks', true);
+      converter.setOption('literalMidWordUnderscores', true);
+      converter.setOption('parseImgDimensions', true);
+      
+      // Add custom extension for adding language-specific class to code blocks
+      const codeExtension = () => [
+        {
+          type: 'output',
+          filter: function(text) {
+            return text.replace(/<pre><code\s*class="([^"]*)">(.*?)<\/code><\/pre>/gs, function(match, language, content) {
+              if (language) {
+                // Clean up the language identifier
+                const lang = language.replace('language-', '').trim();
+                return `<pre data-language="${lang}"><code class="language-${lang} hljs">${content}</code></pre>`;
+              } else {
+                return `<pre><code class="hljs">${content}</code></pre>`;
+              }
+            });
+          }
+        }
+      ];
+      
+      // Add the extension
+      converter.addExtension(codeExtension());
+      const html = converter.makeHtml(md);
+      
+      return html;
+    };
+
+    window.returnHome = () => {
+      if (!window.defaultHtml) {
+        let defaultContent = `
+# Welcome to BSV Overlay Services
+
+This is a production-ready overlay services node built with Go and Fiber, providing full compatibility with the TypeScript overlay-express implementation.
+
+## Features
+
+- **Multi-backend Storage**: Support for Redis, MongoDB, SQLite, and filesystem storage
+- **Real-time Processing**: Queue-based transaction processing with WebSocket subscriptions
+- **Advanced Endpoints**: Event-based lookups, ARC webhook integration, and admin operations
+- **Professional Web Interface**: Dynamic documentation and interactive API testing
+
+## Server Information
+
+- **Name**: {{.Name}}
+- **Network**: {{.Network}}
+- **FQDN**: {{.FQDN}}
+- **Storage**: {{.StorageInfo}}
+
+## Available Endpoints
+
+### Core API
+- \`POST /submit\` - Submit transactions with BEEF format and x-topics header
+- \`POST /lookup\` - Perform event-based lookups with overlay storage capabilities
+- \`POST /arc-ingest\` - Process ARC webhook payloads for transaction confirmation
+- \`GET /health\` - Health check endpoint for monitoring service status
+
+### WebSocket API
+- \`GET /ws\` - WebSocket endpoint for real-time event subscriptions
+- Topics: Subscribe to specific topics or 'all' for global events
+
+### Documentation & Monitoring
+- \`GET /dashboard\` - Enhanced real-time dashboard with detailed metrics
+- \`GET /listTopicManagers\` - List available topic managers
+- \`GET /listLookupServiceProviders\` - List available lookup service providers
+
+## Getting Started
+
+1. **Submit a Transaction**:
+   \`\`\`bash
+   curl -X POST {{.BaseURL}}/submit \\
+     -H "Content-Type: application/octet-stream" \\
+     -H "x-topics: example_topic" \\
+     --data-binary @transaction.beef
+   \`\`\`
+
+2. **Query Events**:
+   \`\`\`bash
+   curl -X POST {{.BaseURL}}/lookup \\
+     -H "Content-Type: application/json" \\
+     -d '{"event": "example_event"}'
+   \`\`\`
+
+3. **Real-time WebSocket**:
+   \`\`\`javascript
+   const ws = new WebSocket('{{.WebSocketURL}}');
+   ws.send(JSON.stringify({
+     action: 'subscribe',
+     topics: ['example_topic']
+   }));
+   \`\`\`
+
+## Support
+
+For documentation and examples, visit:
+- [Overlay Services GitHub](https://github.com/bsv-blockchain/overlay-services)
+- [BRC-88 GASP](https://bsv.brc.dev/overlays/0088)
+- [Quick Start Guide](https://fast.brc.dev)
+        `;
+        window.defaultHtml = Convert(defaultContent);
+      }
+      document.getElementById('documentation_container').innerHTML = window.defaultHtml;
+      window.location.hash = '';
+      document.querySelectorAll('.list-item a').forEach(item => {
+        item.classList.remove('active');
+      });
+    };
+    
+    // Function to apply syntax highlighting after content is inserted
+    const applyHighlighting = () => {
+      document.querySelectorAll('pre code').forEach(block => {
+        const blockElement = block;
+        
+        // Check for language class
+        const classList = Array.from(blockElement.classList);
+        const langClass = classList.find(cls => cls.startsWith('language-'));
+        
+        if (langClass) {
+          const language = langClass.replace('language-', '');
+          // Set language label on the parent pre element
+          const preElement = blockElement.parentElement;
+          if (preElement) {
+            preElement.setAttribute('data-language', language);
+          }
+        }
+        
+        // Apply highlighting to all code blocks
+        try {
+          window.hljs.highlightElement(blockElement);
+        } catch (e) {
+          console.error('Error highlighting code:', e);
+        }
+      });
+    };
+
+    let managersData = {};
+    let providersData = {};
+
+    // Function to update URL hash and highlight selected item
+    const updateSelectedItem = (type, id) => {
+      // Update URL hash
+      window.location.hash = `${type}/${id}`;
+      
+      // Remove active class from all list items
+      document.querySelectorAll('.list-item a').forEach(item => {
+        item.classList.remove('active');
+      });
+      
+      // Add active class to selected item
+      const selector = `[data-${type}="${id}"]`;
+      const selectedItem = document.querySelector(selector);
+      if (selectedItem) {
+        selectedItem.classList.add('active');
+      }
+    };
+
+    window.managerDocumentation = async (manager) => {
+      try {
+        let res = await fetch(`/getDocumentationForTopicManager?manager=${manager}&format=fragment`);
+        let docs = await res.text();
+        let managerReadme = Convert(docs);
+
+        let managerData = managersData[manager];
+        let iconURL = managerData?.iconURL || faviconUrl;
+
+        document.getElementById('documentation_container').innerHTML = managerReadme;
+        applyHighlighting();
+        
+        // Update active item and URL
+        updateSelectedItem('manager', manager);
+      } catch (error) {
+        console.error('Error fetching manager documentation:', error);
+        document.getElementById('documentation_container').innerHTML = 
+          `<h2>Error Loading Documentation</h2><p>Failed to load documentation for ${manager}: ${error.message}</p>`;
+      }
+    };
+
+    window.topicDocumentation = async (provider) => {
+      try {
+        let res = await fetch(`/getDocumentationForLookupServiceProvider?provider=${provider}&format=fragment`);
+        let docs = await res.text();
+        let providerReadme = Convert(docs);
+
+        let providerData = providersData[provider];
+        let iconURL = providerData?.iconURL || faviconUrl;
+
+        document.getElementById('documentation_container').innerHTML = providerReadme;
+        applyHighlighting();
+        
+        // Update active item and URL
+        updateSelectedItem('provider', provider);
+      } catch (error) {
+        console.error('Error fetching provider documentation:', error);
+        document.getElementById('documentation_container').innerHTML = 
+          `<h2>Error Loading Documentation</h2><p>Failed to load documentation for ${provider}: ${error.message}</p>`;
+      }
+    };
+
+    // Function to parse hash and load appropriate content
+    const handleUrlHash = () => {
+      const hash = window.location.hash.substring(1); // Remove the # character
+      if (hash) {
+        const [type, id] = hash.split('/');
+        if (type && id) {
+          if (type === 'manager') {
+            // Check if managers data is loaded
+            if (Object.keys(managersData).length > 0 && managersData[id]) {
+              window.managerDocumentation(id);
+            }
+          } else if (type === 'provider') {
+            // Check if providers data is loaded
+            if (Object.keys(providersData).length > 0 && providersData[id]) {
+              window.topicDocumentation(id);
+            }
+          }
+        }
+      } else {
+        returnHome();
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+      let managersLoaded = false;
+      let providersLoaded = false;
+
+      // Check if both managers and providers are loaded before handling hash
+      const checkAllLoaded = () => {
+        if (managersLoaded && providersLoaded) {
+          handleUrlHash();
+        }
+      };
+
+      // Load topic managers
+      fetch('/listTopicManagers', {
+        headers: {
+          'Accept': 'application/json'
+        }
+      })
+        .then(res => res.json())
+        .then(managers => {
+          managersData = managers;
+          const managerList = document.getElementById('manager_list');
+          
+          if (Object.keys(managers).length === 0) {
+            managerList.innerHTML = '<li class="list-item"><span style="color: #666;">No topic managers configured</span></li>';
+          } else {
+            managerList.innerHTML = ''; // Clear the loading message
+            Object.keys(managers).forEach(manager => {
+              let managerData = managers[manager];
+              let li = document.createElement('li');
+              li.className = 'list-item';
+              li.innerHTML = `
+                <a data-manager="${manager}" onclick="window.managerDocumentation('${manager}')">
+                  ${managerData.name || manager}
+                </a>
+              `;
+              managerList.appendChild(li);
+            });
+          }
+          managersLoaded = true;
+          checkAllLoaded();
+        })
+        .catch(() => {
+          let message = document.createElement('li');
+          message.className = 'list-item';
+          message.innerHTML = '<span style="color: #dc3545;">Failed to load topic managers</span>';
+          document.getElementById('manager_list').appendChild(message);
+          managersLoaded = true;
+          checkAllLoaded();
+        });
+
+      // Load lookup service providers
+      fetch('/listLookupServiceProviders', {
+        headers: {
+          'Accept': 'application/json'
+        }
+      })
+        .then(res => res.json())
+        .then(providers => {
+          providersData = providers;
+          const providerList = document.getElementById('provider_list');
+          
+          if (Object.keys(providers).length === 0) {
+            providerList.innerHTML = '<li class="list-item"><span style="color: #666;">No lookup service providers configured</span></li>';
+          } else {
+            providerList.innerHTML = ''; // Clear the loading message
+            Object.keys(providers).forEach(provider => {
+              let providerData = providers[provider];
+              let li = document.createElement('li');
+              li.className = 'list-item';
+              li.innerHTML = `
+                <a data-provider="${provider}" onclick="window.topicDocumentation('${provider}')">
+                  ${providerData.name || provider}
+                </a>
+              `;
+              providerList.appendChild(li);
+            });
+          }
+          providersLoaded = true;
+          checkAllLoaded();
+        })
+        .catch(() => {
+          let message = document.createElement('li');
+          message.className = 'list-item';
+          message.innerHTML = '<span style="color: #dc3545;">Failed to load lookup service providers</span>';
+          document.getElementById('provider_list').appendChild(message);
+          providersLoaded = true;
+          checkAllLoaded();
+        });
+
+      // Listen for hash changes
+      window.addEventListener('hashchange', handleUrlHash);
+    });
+  </script>
+</head>
+
+<body>
+  <div class="main">
+    <div class="column_left">
+      <div class="page_head">
+        <h1 class="welcome" onclick="window.returnHome()">{{.Name}}</h1>
+        <p style="color: #666; font-size: 14px;">{{.Network}} network &bull; {{.StorageInfo}}</p>
+      </div>
+      <div class="topic_container">
+        <h3>Topic Managers</h3>
+        <ul id="manager_list">
+          <li class="list-item"><span style="color: #666;">Loading...</span></li>
+        </ul>
+      </div>
+      <div class="provider_container">
+        <h3>Lookup Services</h3>
+        <ul id="provider_list">
+          <li class="list-item"><span style="color: #666;">Loading...</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Resources</h3>
+        <ul id="external_list">
+          <li class="list-item"><a href="/dashboard">Enhanced Dashboard</a></li>
+          <li class="list-item"><a href="/test">API Tester</a></li>
+          <li class="list-item"><a href="/health">Health Check</a></li>
+          <li class="list-item"><a href="https://github.com/bsv-blockchain/overlay-services" target="_blank">Overlay Services GitHub</a></li>
+          <li class="list-item"><a href="https://bsv.brc.dev/overlays/0088" target="_blank">BRC-88 GASP</a></li>
+          <li class="list-item"><a href="https://fast.brc.dev" target="_blank">Quick Start Guide</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="column_right">
+      <div id="documentation_container">
+        <!-- Dynamic content will be loaded here -->
+      </div>
+    </div>
+  </div>
+</body>
+</html>

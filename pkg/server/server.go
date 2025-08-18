@@ -3,20 +3,29 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/b-open-io/overlay/publish"
+	"github.com/b-open-io/overlay/storage"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/ship"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/slap"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
+	"github.com/bsv-blockchain/go-overlay-services/pkg/core/gasp"
+	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
+	"github.com/bsv-blockchain/go-sdk/util"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -59,14 +68,31 @@ type OverlayServer struct {
 
 	// Fiber app
 	App *fiber.App
+
+	// Template manager
+	TemplateManager *TemplateManager
+
+	// Queue processing and real-time features
+	QueueManager     *QueueManager
+	WebSocketManager *WebSocketManager
 }
 
 // NewOverlayServer creates a new OverlayServer instance
-func NewOverlayServer(name, privateKey, fqdn string) *OverlayServer {
+// adminToken is optional - if empty, a random UUID will be generated
+func NewOverlayServer(name, privateKey, fqdn string, adminToken ...string) *OverlayServer {
+	// Generate random admin token if not provided
+	var token string
+	if len(adminToken) > 0 && adminToken[0] != "" {
+		token = adminToken[0]
+	} else {
+		token = uuid.New().String()
+	}
+
 	return &OverlayServer{
 		Name:             name,
 		PrivateKey:       privateKey,
 		AdvertisableFQDN: fqdn,
+		AdminToken:       token,
 		Port:             3000,
 		Network:          "main",
 		Logger:           log.Default(),
@@ -75,6 +101,7 @@ func NewOverlayServer(name, privateKey, fqdn string) *OverlayServer {
 		Managers:         make(map[string]engine.TopicManager),
 		Services:         make(map[string]engine.LookupService),
 		MigrationsToRun:  make([]Migration, 0),
+		TemplateManager:  NewTemplateManager(),
 	}
 }
 
@@ -121,7 +148,7 @@ func (s *OverlayServer) ConfigureDatabase(driverName, connectionString string) *
 	return s
 }
 
-// ConfigureMongoDB establishes MongoDB connection (equivalent to overlay-express configureMongo)
+// ConfigureMongoDB establishes MongoDB connection
 func (s *OverlayServer) ConfigureMongoDB(connectionString string) *OverlayServer {
 	return s.ConfigureMongoDBWithDatabase(connectionString, "overlay")
 }
@@ -133,7 +160,7 @@ func (s *OverlayServer) ConfigureMongoDBWithDatabase(connectionString, database 
 		return s
 	}
 
-	// Create MongoDB client options - direct usage like overlay-express uses mongodb directly
+	// Create MongoDB client options
 	clientOptions := options.Client().ApplyURI(connectionString)
 	clientOptions.SetMaxPoolSize(100)
 	clientOptions.SetMaxConnIdleTime(5 * time.Minute)
@@ -265,12 +292,20 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		return s
 	}
 
-	// Create storage implementation
-	storage, err := NewSQLStorage(s.DB)
+	// Get storage configuration from environment
+	eventStorageURL := os.Getenv("EVENT_STORAGE")
+	beefStorageURL := os.Getenv("BEEF_STORAGE")
+
+	var storage engine.Storage
+	var err error
+
+	// Use overlay storage with database connection
+	storage, err = CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL, s.DB)
 	if err != nil {
-		s.Logger.Printf("Error creating storage: %v", err)
+		s.Logger.Printf("Failed to create overlay storage: %v", err)
 		return s
 	}
+	s.Logger.Printf("Using overlay storage with EVENT_STORAGE=%s, BEEF_STORAGE=%s", eventStorageURL, beefStorageURL)
 
 	// Create Engine configuration with real storage
 	engineConfig := engine.Engine{
@@ -305,17 +340,23 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	// Initialize the Engine with real configuration
 	s.Engine = engine.NewEngine(engineConfig)
 
-	// Auto-configure SHIP/SLAP services if requested (like overlay-express)
+	// Auto-configure SHIP/SLAP services if requested
 	if autoConfigureShipSlap {
 		s.autoConfigureDiscoveryServices()
 	}
 
 	s.Logger.Printf("Engine configured with hosting URL: %s, storage: SQL, managers: %d, services: %d",
 		s.AdvertisableFQDN, len(s.Engine.Managers), len(s.Engine.LookupServices))
+
+	// Initialize queue processing and WebSocket management
+	if err := s.initializeBackgroundServices(); err != nil {
+		s.Logger.Printf("Warning: Failed to initialize background services: %v", err)
+	}
+
 	return s
 }
 
-// autoConfigureDiscoveryServices automatically configures SHIP and SLAP services like overlay-express
+// autoConfigureDiscoveryServices automatically configures SHIP and SLAP services
 func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	// Auto-configure SHIP topic manager if not already configured
 	if _, exists := s.Managers["tm_ship"]; !exists {
@@ -342,18 +383,24 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	// Auto-configure SHIP lookup service with MongoDB if available
 	if s.MongoDB != nil {
 		if _, exists := s.Services["ls_ship"]; !exists {
-			// TODO: Create proper PushDropDecoder and Utils implementations
-			// For now, SHIP/SLAP lookup services require these dependencies
-			s.Logger.Printf("SHIP lookup service requires PushDropDecoder and Utils implementations")
+			// Create SHIP storage and lookup service
+			shipStorage := ship.NewSHIPStorage(s.MongoDB)
+			shipLookupService := ship.NewSHIPLookupService(shipStorage)
+
+			s.ConfigureLookupService("ls_ship", shipLookupService)
+			s.Logger.Printf("Auto-configured SHIP lookup service with MongoDB")
 		}
 	}
 
 	// Auto-configure SLAP lookup service with MongoDB if available
 	if s.MongoDB != nil {
 		if _, exists := s.Services["ls_slap"]; !exists {
-			// TODO: Create proper PushDropDecoder and Utils implementations
-			// For now, SHIP/SLAP lookup services require these dependencies
-			s.Logger.Printf("SLAP lookup service requires PushDropDecoder and Utils implementations")
+			// Create SLAP storage and lookup service
+			slapStorage := slap.NewSLAPStorage(s.MongoDB)
+			slapLookupService := slap.NewSLAPLookupService(slapStorage)
+
+			s.ConfigureLookupService("ls_slap", slapLookupService)
+			s.Logger.Printf("Auto-configured SLAP lookup service with MongoDB")
 		}
 	}
 
@@ -375,8 +422,41 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	}
 }
 
+// initializeBackgroundServices initializes queue processing and WebSocket management
+func (s *OverlayServer) initializeBackgroundServices() error {
+	// Get publisher from overlay storage adapter
+	var publisher publish.Publisher
+	if overlayAdapter, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+		publisher = overlayAdapter.GetPublisher()
+	} else if sqlWrapper, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
+		publisher = sqlWrapper.GetPublisher()
+	}
+
+	// Initialize queue manager
+	queueManager, err := NewQueueManager(s.Engine, publisher, s.Logger)
+	if err != nil {
+		return fmt.Errorf("failed to create queue manager: %w", err)
+	}
+	s.QueueManager = queueManager
+
+	// Initialize WebSocket manager
+	webSocketManager, err := NewWebSocketManager(publisher, s.Logger)
+	if err != nil {
+		return fmt.Errorf("failed to create WebSocket manager: %w", err)
+	}
+	s.WebSocketManager = webSocketManager
+
+	s.Logger.Printf("Background services initialized successfully")
+	return nil
+}
+
 // Setup initializes the Fiber app and middleware
 func (s *OverlayServer) Setup() error {
+	// Load HTML templates
+	if err := s.TemplateManager.LoadTemplates(); err != nil {
+		return fmt.Errorf("failed to load templates: %w", err)
+	}
+
 	s.App = fiber.New(fiber.Config{
 		ErrorHandler: s.errorHandler,
 	})
@@ -402,7 +482,11 @@ func (s *OverlayServer) Setup() error {
 // setupRoutes configures all the HTTP routes
 func (s *OverlayServer) setupRoutes() {
 	// Public routes
-	s.App.Get("/", s.handleWebUI)
+	s.App.Get("/", s.handleDynamicInterface)   // Root path serves dynamic interface
+	s.App.Get("/ui", s.handleDynamicInterface) // Keep for backward compatibility
+	s.App.Get("/services", s.handleWebUI)      // Move dashboard to /services
+	s.App.Get("/dashboard", s.handleDashboard)
+	s.App.Get("/test", s.handleAPITester)
 	s.App.Get("/health", s.handleHealthCheck)
 	s.App.Get("/listTopicManagers", s.handleListTopicManagers)
 	s.App.Get("/listLookupServiceProviders", s.handleListLookupServiceProviders)
@@ -410,6 +494,9 @@ func (s *OverlayServer) setupRoutes() {
 	s.App.Get("/getDocumentationForLookupServiceProvider", s.handleGetLookupServiceDocs)
 	s.App.Post("/submit", s.handleSubmit)
 	s.App.Post("/lookup", s.handleLookup)
+
+	// WebSocket endpoint for real-time events
+	s.App.Get("/ws", s.handleWebSocketUpgrade)
 
 	// ARC webhook endpoint (if API key configured)
 	if s.ARCAPIKey != "" {
@@ -475,7 +562,7 @@ func (s *OverlayServer) errorHandler(c *fiber.Ctx, err error) error {
 	})
 }
 
-// Route handlers (placeholders for Phase 1)
+// Route handlers
 
 func (s *OverlayServer) handleWebUI(c *fiber.Ctx) error {
 	// Check database status
@@ -493,29 +580,263 @@ func (s *OverlayServer) handleWebUI(c *fiber.Ctx) error {
 
 	// Check engine status
 	engineStatus := "not_configured"
+	storageType := "unknown"
 	if s.Engine != nil {
 		if s.Engine.Storage != nil {
 			engineStatus = "configured_with_storage"
+
+			// Try to determine storage type
+			if _, ok := s.Engine.Storage.(storage.EventDataStorage); ok {
+				storageType = "overlay_storage"
+			} else {
+				storageType = "basic_storage"
+			}
 		} else {
 			engineStatus = "configured_no_storage"
 		}
 	}
 
-	return c.JSON(fiber.Map{
-		"name":                     s.Name,
-		"network":                  s.Network,
-		"fqdn":                     s.AdvertisableFQDN,
-		"status":                   "running",
-		"database_status":          databaseStatus,
-		"engine_status":            engineStatus,
-		"message":                  "Go Overlay Fiber Server - Phase 1 Complete: Missing Configuration Methods Added",
-		"phase":                    "1",
-		"topic_managers":           len(s.Managers),
-		"lookup_services":          len(s.Services),
-		"migrations_count":         len(s.MigrationsToRun),
-		"webui_configured":         s.WebUIConfig.Host != "",
-		"chain_tracker_configured": s.ChainTracker != nil,
-	})
+	// Prepare template data
+	data := MainPageData{
+		Name:           s.Name,
+		Network:        s.Network,
+		DatabaseStatus: databaseStatus,
+		EngineStatus:   engineStatus,
+		StatusClass:    getStatusClass(engineStatus),
+		StatusText:     getStatusText(engineStatus),
+		StorageType:    storageType,
+	}
+
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("main", data)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Template rendering failed: " + err.Error(),
+		})
+	}
+
+	// Set content type to HTML
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+// Helper function to get CSS class for status
+func getStatusClass(status string) string {
+	switch status {
+	case "configured_with_storage":
+		return "healthy"
+	case "configured_no_storage":
+		return "warning"
+	default:
+		return "error"
+	}
+}
+
+// Helper function to get human-readable status text
+func getStatusText(status string) string {
+	switch status {
+	case "configured_with_storage":
+		return "Active"
+	case "configured_no_storage":
+		return "Configured"
+	default:
+		return "Not Configured"
+	}
+}
+
+func (s *OverlayServer) handleDashboard(c *fiber.Ctx) error {
+	format := c.Query("format", "html")
+
+	// Collect comprehensive dashboard data
+	dashboardData := s.collectDashboardData()
+
+	// Return JSON if requested for AJAX updates
+	if format == "json" {
+		return c.JSON(dashboardData)
+	}
+
+	// Render HTML template
+	html, err := s.TemplateManager.RenderTemplate("dashboard", dashboardData)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Dashboard template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func (s *OverlayServer) collectDashboardData() *DashboardData {
+	ctx := context.Background()
+
+	// Basic server information
+	data := &DashboardData{
+		Name:                 s.Name,
+		Network:              s.Network,
+		FQDN:                 s.AdvertisableFQDN,
+		Port:                 s.Port,
+		Timestamp:            time.Now().Format("2006-01-02 15:04:05 MST"),
+		AdminTokenConfigured: s.AdminToken != "",
+		GASPSyncEnabled:      s.EnableGASPSync,
+	}
+
+	// Queue Manager status
+	if s.QueueManager != nil {
+		data.QueueManager = s.QueueManager.GetStatus()
+	} else {
+		data.QueueManager = map[string]interface{}{"status": "not_configured"}
+	}
+
+	// WebSocket Manager status
+	if s.WebSocketManager != nil {
+		data.WebSocketManager = s.WebSocketManager.GetStats()
+	} else {
+		data.WebSocketManager = map[string]interface{}{"status": "not_configured"}
+	}
+
+	// Database status
+	data.Databases = make(map[string]interface{})
+	if s.DB != nil {
+		if err := s.DB.PingContext(ctx); err != nil {
+			data.Databases["sql"] = map[string]interface{}{"status": "unhealthy", "error": err.Error()}
+		} else {
+			data.Databases["sql"] = map[string]interface{}{"status": "healthy"}
+		}
+	}
+
+	if s.MongoDB != nil {
+		if err := s.MongoDB.Client().Ping(ctx, nil); err != nil {
+			data.Databases["mongodb"] = map[string]interface{}{"status": "unhealthy", "error": err.Error()}
+		} else {
+			data.Databases["mongodb"] = map[string]interface{}{"status": "healthy"}
+		}
+	}
+
+	// Engine status
+	if s.Engine != nil {
+		data.Engine = map[string]interface{}{
+			"hosting_url":    s.Engine.HostingURL,
+			"managers_count": len(s.Engine.Managers),
+			"services_count": len(s.Engine.LookupServices),
+		}
+
+		// Storage information
+		if s.Engine.Storage != nil {
+			if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+				data.StorageType = "overlay_storage"
+				data.StorageStatus = "active"
+				data.StorageConfig = map[string]interface{}{
+					"event_storage": os.Getenv("EVENT_STORAGE"),
+					"beef_storage":  os.Getenv("BEEF_STORAGE"),
+				}
+			} else if _, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
+				data.StorageType = "sql_wrapper"
+				data.StorageStatus = "active"
+				data.StorageConfig = map[string]interface{}{
+					"type": "sql_with_overlay_features",
+				}
+			} else {
+				data.StorageType = "basic_storage"
+				data.StorageStatus = "active"
+			}
+		} else {
+			data.StorageType = "none"
+			data.StorageStatus = "not_configured"
+		}
+	} else {
+		data.Engine = map[string]interface{}{"status": "not_configured"}
+		data.StorageType = "none"
+		data.StorageStatus = "not_configured"
+	}
+
+	return data
+}
+
+func (s *OverlayServer) handleDynamicInterface(c *fiber.Ctx) error {
+	// Determine storage info
+	storageInfo := "Unknown"
+	if s.Engine != nil && s.Engine.Storage != nil {
+		if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+			storageInfo = "Overlay Storage"
+		} else if _, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
+			storageInfo = "SQL + Overlay Features"
+		} else {
+			storageInfo = "Basic Storage"
+		}
+	}
+
+	// Determine protocol for WebSocket URL
+	protocol := "ws://"
+	if c.Secure() {
+		protocol = "wss://"
+	}
+
+	// Prepare template data
+	data := &DynamicInterfaceData{
+		Name:         s.Name,
+		Network:      s.Network,
+		FQDN:         s.AdvertisableFQDN,
+		StorageInfo:  storageInfo,
+		BaseURL:      fmt.Sprintf("http://%s", c.Get("Host")),
+		WebSocketURL: fmt.Sprintf("%s%s/ws", protocol, c.Get("Host")),
+	}
+
+	// Use HTTPS if secure
+	if c.Secure() {
+		data.BaseURL = fmt.Sprintf("https://%s", c.Get("Host"))
+	}
+
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("dynamic-interface", data)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Dynamic interface template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func (s *OverlayServer) handleAPITester(c *fiber.Ctx) error {
+	// Determine protocol for WebSocket URL
+	protocol := "ws://"
+	if c.Secure() {
+		protocol = "wss://"
+	}
+
+	// Prepare template data
+	data := &APITesterData{
+		Name:         s.Name,
+		WebSocketURL: fmt.Sprintf("%s%s/ws", protocol, c.Get("Host")),
+	}
+
+	// Render template
+	html, err := s.TemplateManager.RenderTemplate("api-tester", data)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "API tester template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func (s *OverlayServer) handleWebSocketUpgrade(c *fiber.Ctx) error {
+	if s.WebSocketManager == nil {
+		return c.Status(503).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "WebSocket support not available",
+		})
+	}
+
+	return s.WebSocketManager.HandleWebSocketUpgrade(c)
 }
 
 func (s *OverlayServer) handleHealthCheck(c *fiber.Ctx) error {
@@ -566,6 +887,20 @@ func (s *OverlayServer) handleHealthCheck(c *fiber.Ctx) error {
 		healthStatus["engine"] = fiber.Map{"status": "not_configured"}
 	}
 
+	// Check queue manager status
+	if s.QueueManager != nil {
+		healthStatus["queue_manager"] = s.QueueManager.GetStatus()
+	} else {
+		healthStatus["queue_manager"] = fiber.Map{"status": "not_configured"}
+	}
+
+	// Check WebSocket manager status
+	if s.WebSocketManager != nil {
+		healthStatus["websocket_manager"] = s.WebSocketManager.GetStats()
+	} else {
+		healthStatus["websocket_manager"] = fiber.Map{"status": "not_configured"}
+	}
+
 	status := 200
 	if healthStatus["status"] == "degraded" {
 		status = 503
@@ -575,55 +910,75 @@ func (s *OverlayServer) handleHealthCheck(c *fiber.Ctx) error {
 }
 
 func (s *OverlayServer) handleListTopicManagers(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 4
-	return c.JSON(fiber.Map{
-		"topicManagers": []string{},
-		"message":       "Topic managers will be implemented in Phase 4",
-	})
-}
+	acceptHeader := c.Get("Accept")
+	wantsJSON := strings.Contains(acceptHeader, "application/json") || c.Query("format") == "json"
 
-func (s *OverlayServer) handleListLookupServiceProviders(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 4
-	return c.JSON(fiber.Map{
-		"lookupServices": []string{},
-		"message":        "Lookup services will be implemented in Phase 4",
-	})
-}
+	// Collect topic managers data
+	managers := make(map[string]*overlay.MetaData)
 
-func (s *OverlayServer) handleGetTopicManagerDocs(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 4
-	return c.JSON(fiber.Map{
-		"documentation": "Topic manager documentation will be available in Phase 4",
-	})
-}
+	if s.Engine != nil && s.Engine.Managers != nil {
+		for name, manager := range s.Engine.Managers {
+			managers[name] = manager.GetMetaData()
+		}
+	}
 
-func (s *OverlayServer) handleGetLookupServiceDocs(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 4
-	return c.JSON(fiber.Map{
-		"documentation": "Lookup service documentation will be available in Phase 4",
-	})
-}
+	// Return JSON if requested
+	if wantsJSON {
+		return c.JSON(managers)
+	}
 
-func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
-	// Parse x-topics header like overlay-express
-	topicsHeader := c.Get("x-topics")
-	if topicsHeader == "" {
-		return c.Status(400).JSON(ErrorResponse{
+	// Otherwise render HTML template
+	html, err := s.TemplateManager.RenderTemplate("topic-managers", nil)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
 			Status:  "error",
-			Message: "x-topics header required",
+			Message: "Template rendering failed: " + err.Error(),
 		})
 	}
 
-	// Split topics by comma
-	topics := strings.Split(topicsHeader, ",")
-	for i := range topics {
-		topics[i] = strings.TrimSpace(topics[i])
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func (s *OverlayServer) handleListLookupServiceProviders(c *fiber.Ctx) error {
+	acceptHeader := c.Get("Accept")
+	wantsJSON := strings.Contains(acceptHeader, "application/json") || c.Query("format") == "json"
+
+	// Collect lookup service providers data
+	providers := make(map[string]*overlay.MetaData)
+
+	if s.Engine != nil && s.Engine.LookupServices != nil {
+		for name, service := range s.Engine.LookupServices {
+			providers[name] = service.GetMetaData()
+		}
 	}
 
-	// Create TaggedBEEF from body
-	taggedBEEF := overlay.TaggedBEEF{
-		Beef:   c.Body(),
-		Topics: topics,
+	// Return JSON if requested
+	if wantsJSON {
+		return c.JSON(providers)
+	}
+
+	// Otherwise render HTML template
+	html, err := s.TemplateManager.RenderTemplate("lookup-services", nil)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Template rendering failed: " + err.Error(),
+		})
+	}
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func (s *OverlayServer) handleGetTopicManagerDocs(c *fiber.Ctx) error {
+	// Get the manager name from query parameter
+	managerName := c.Query("manager", "")
+	if managerName == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "manager query parameter is required",
+		})
 	}
 
 	// Check if Engine is configured
@@ -634,80 +989,606 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create context
-	ctx := c.Context()
-
-	// Call Engine.Submit() with parsed data
-	// Use historical mode for now - this should be the standard submit mode
-	result, err := s.Engine.Submit(ctx, taggedBEEF, engine.SubmitModeHistorical, nil)
+	// Use the generic interface method to get documentation
+	documentation, err := s.Engine.GetDocumentationForTopicManager(managerName)
 	if err != nil {
-		return c.Status(500).JSON(ErrorResponse{
+		return c.Status(404).JSON(ErrorResponse{
 			Status:  "error",
-			Message: "Submit failed: " + err.Error(),
+			Message: "Documentation not found for topic manager: " + managerName,
 		})
 	}
 
-	// Return success with steak information
-	return c.JSON(fiber.Map{
-		"status":  "success",
-		"message": "Transaction submitted successfully",
-		"steak":   result,
+	// Return raw markdown with text/markdown content type
+	c.Set("Content-Type", "text/markdown")
+	return c.SendString(documentation)
+}
+
+func (s *OverlayServer) handleGetLookupServiceDocs(c *fiber.Ctx) error {
+	// Get the provider name from query parameter
+	providerName := c.Query("provider", "")
+	if providerName == "" {
+		// Try legacy parameter name for compatibility
+		providerName = c.Query("lookupService", "")
+	}
+	if providerName == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "provider or lookupService query parameter is required",
+		})
+	}
+
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Use the generic interface method to get documentation
+	documentation, err := s.Engine.GetDocumentationForLookupServiceProvider(providerName)
+	if err != nil {
+		return c.Status(404).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Documentation not found for lookup service provider: " + providerName,
+		})
+	}
+
+	// Return raw markdown with text/markdown content type
+	c.Set("Content-Type", "text/markdown")
+	return c.SendString(documentation)
+}
+
+func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
+	// Parse x-topics header
+	topicsHeader := c.Get("x-topics")
+	if topicsHeader == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "x-topics header required",
+		})
+	}
+
+	// Parse topics as JSON
+	var topics []string
+	if err := json.Unmarshal([]byte(topicsHeader), &topics); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid x-topics header format (must be valid JSON array): " + err.Error(),
+		})
+	}
+
+	// Check for x-includes-off-chain-values header
+	includesOffChain := c.Get("x-includes-off-chain-values") == "true"
+
+	// Check if Engine is configured first
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Process BEEF data and extract off-chain values if present
+	var beef []byte
+	var offChainValues []byte
+	bodyData := c.Body()
+
+	if includesOffChain {
+		// Extract BEEF and off-chain values using Reader
+		reader := util.NewReader(bodyData)
+		beefLength, err := reader.ReadVarInt()
+		if err != nil {
+			return c.Status(400).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Failed to read BEEF length from off-chain data: " + err.Error(),
+			})
+		}
+
+		beef, err = reader.ReadBytes(int(beefLength))
+		if err != nil {
+			return c.Status(400).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Failed to read BEEF data: " + err.Error(),
+			})
+		}
+
+		// Read remaining bytes as off-chain values
+		remainingData := reader.ReadRemaining()
+		if len(remainingData) > 0 {
+			offChainValues = remainingData
+		}
+	} else {
+		// No off-chain values, use full body as BEEF
+		beef = bodyData
+	}
+
+	// Create TaggedBEEF from processed data
+	taggedBEEF := overlay.TaggedBEEF{
+		Beef:           beef,
+		Topics:         topics,
+		OffChainValues: offChainValues,
+	}
+
+	// Create context
+	ctx := c.Context()
+
+	// Using a callback function, we can return once the STEAK is ready
+	var responseSent bool
+	result, err := s.Engine.Submit(ctx, taggedBEEF, engine.SubmitModeHistorical, func(steak *overlay.Steak) {
+		if !responseSent {
+			responseSent = true
+			c.JSON(steak)
+		}
 	})
+	if err != nil {
+		if !responseSent {
+			return c.Status(500).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Submit failed: " + err.Error(),
+			})
+		}
+		// If callback already sent response, just log the error
+		s.Logger.Printf("Submit error after callback response: %v", err)
+		return nil
+	}
+
+	// Parse BEEF to get transaction ID (after successful engine submission)
+	_, _, txid, err := transaction.ParseBeef(beef)
+	if err != nil {
+		// If BEEF parsing fails but engine submission succeeded, log warning but continue
+		s.Logger.Printf("Warning: BEEF parsing failed after successful submission: %v", err)
+		txid = nil
+	}
+
+	// Enqueue transaction for background processing if queue manager is available
+	if s.QueueManager != nil && txid != nil {
+		// Enqueue with default values - in production, these would come from the submission context
+		if err := s.QueueManager.EnqueueTransaction(txid, 0, 0); err != nil {
+			s.Logger.Printf("Warning: Failed to enqueue transaction for processing: %v", err)
+		}
+	}
+
+	// Broadcast submission event via WebSocket if available
+	if s.WebSocketManager != nil && txid != nil {
+		submissionEvent := WebSocketMessage{
+			Type:  "transaction_submitted",
+			Topic: "all",
+			Data: fiber.Map{
+				"txid":   txid.String(),
+				"topics": topics,
+				"steak":  result,
+			},
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		}
+		s.WebSocketManager.BroadcastToAll(submissionEvent)
+	}
+
+	// Return success with steak information if callback hasn't already sent response
+	if !responseSent {
+		return c.JSON(result)
+	}
+
+	// Response already sent by callback
+	return nil
 }
 
 func (s *OverlayServer) handleLookup(c *fiber.Ctx) error {
-	// TODO: Implement lookup queries in Phase 3
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse JSON body into EventQuestion
+	var question storage.EventQuestion
+	if err := c.BodyParser(&question); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid lookup query: " + err.Error(),
+		})
+	}
+
+	// Validate that we have at least one event to query
+	if question.Event == "" && len(question.Events) == 0 {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "At least one event must be specified (event or events field)",
+		})
+	}
+
+	// Type assert storage to EventDataStorage interface
+	eventDataStorage, ok := s.Engine.Storage.(storage.EventDataStorage)
+	if !ok {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Storage does not support event-based lookups",
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Perform the lookup with data included by default
+	results, err := eventDataStorage.LookupOutpoints(ctx, &question, true)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Lookup failed: " + err.Error(),
+		})
+	}
+
+	// Return successful results
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Lookup endpoint will be implemented in Phase 3",
+		"status":  "success",
+		"results": results,
+		"count":   len(results),
 	})
 }
 
+// ARCIngestRequest represents the payload structure for ARC webhook ingestion
+type ARCIngestRequest struct {
+	TxID        string `json:"txid"`
+	MerklePath  string `json:"merklePath"`
+	BlockHeight uint32 `json:"blockHeight"`
+}
+
+// EvictOutpointRequest represents the payload structure for evict outpoint request
+type EvictOutpointRequest struct {
+	TxID        string `json:"txid"`
+	OutputIndex uint32 `json:"outputIndex"`
+	Service     string `json:"service,omitempty"` // Optional: specific service to evict from
+}
+
+// ForeignGASPNodeRequest represents the payload structure for foreign GASP node request
+type ForeignGASPNodeRequest struct {
+	GraphID     string `json:"graphID"`     // Transaction ID for graph ID
+	TxID        string `json:"txid"`        // Transaction ID for the node
+	OutputIndex uint32 `json:"outputIndex"` // Output index for the node
+}
+
 func (s *OverlayServer) handleARCIngest(c *fiber.Ctx) error {
-	// TODO: Implement ARC webhook processing in Phase 3
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse JSON body into ARCIngestRequest
+	var request ARCIngestRequest
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid ARC ingest payload: " + err.Error(),
+		})
+	}
+
+	// Validate required fields
+	if request.TxID == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "txid field is required",
+		})
+	}
+
+	if request.MerklePath == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "merklePath field is required",
+		})
+	}
+
+	if request.BlockHeight == 0 {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "blockHeight must be a positive integer (greater than 0)",
+		})
+	}
+
+	// Parse transaction ID from hex
+	txid, err := chainhash.NewHashFromHex(request.TxID)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid transaction ID format: " + err.Error(),
+		})
+	}
+
+	// Parse merkle path from hex
+	merklePath, err := transaction.NewMerklePathFromHex(request.MerklePath)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid merkle path format: " + err.Error(),
+		})
+	}
+
+	// Set block height on merkle path
+	merklePath.BlockHeight = request.BlockHeight
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.HandleNewMerkleProof
+	err = s.Engine.HandleNewMerkleProof(ctx, txid, merklePath)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to process merkle proof: " + err.Error(),
+		})
+	}
+
+	// Return success response
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "ARC ingest endpoint will be implemented in Phase 3",
+		"status":  "success",
+		"message": "Transaction status updated successfully",
+		"txid":    request.TxID,
 	})
 }
 
 func (s *OverlayServer) handleRequestSyncResponse(c *fiber.Ctx) error {
-	// TODO: Implement GASP sync in Phase 4
-	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Sync response endpoint will be implemented in Phase 4",
-	})
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse x-bsv-topic header (required for GASP sync)
+	topic := c.Get("x-bsv-topic")
+	if topic == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "x-bsv-topic header is required",
+		})
+	}
+
+	// Parse JSON body into GASP InitialRequest
+	var initialRequest gasp.InitialRequest
+	if err := c.BodyParser(&initialRequest); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid GASP initial request payload: " + err.Error(),
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.ProvideForeignSyncResponse()
+	response, err := s.Engine.ProvideForeignSyncResponse(ctx, &initialRequest, topic)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to provide foreign sync response: " + err.Error(),
+		})
+	}
+
+	// Return the InitialResponse as JSON
+	return c.JSON(response)
 }
 
 func (s *OverlayServer) handleRequestForeignGASPNode(c *fiber.Ctx) error {
-	// TODO: Implement GASP sync in Phase 4
-	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Foreign GASP node endpoint will be implemented in Phase 4",
-	})
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse JSON body into ForeignGASPNodeRequest
+	var request ForeignGASPNodeRequest
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid foreign GASP node request payload: " + err.Error(),
+		})
+	}
+
+	// Validate required fields
+	if request.GraphID == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "graphID field is required",
+		})
+	}
+	if request.TxID == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "txid field is required",
+		})
+	}
+
+	// Parse transaction IDs from hex
+	graphIDHash, err := chainhash.NewHashFromHex(request.GraphID)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid graphID format: " + err.Error(),
+		})
+	}
+
+	txidHash, err := chainhash.NewHashFromHex(request.TxID)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid txid format: " + err.Error(),
+		})
+	}
+
+	// Create outpoints
+	graphIDOutpoint := &transaction.Outpoint{
+		Txid:  *graphIDHash,
+		Index: 0, // Graph ID typically uses output index 0
+	}
+
+	outpoint := &transaction.Outpoint{
+		Txid:  *txidHash,
+		Index: request.OutputIndex,
+	}
+
+	// Parse x-bsv-topic header (required for GASP sync)
+	topic := c.Get("x-bsv-topic")
+	if topic == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "x-bsv-topic header is required",
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.ProvideForeignGASPNode()
+	node, err := s.Engine.ProvideForeignGASPNode(ctx, graphIDOutpoint, outpoint, topic)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to provide foreign GASP node: " + err.Error(),
+		})
+	}
+
+	// Return the Node as JSON
+	return c.JSON(node)
 }
 
 func (s *OverlayServer) handleSyncAdvertisements(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 5
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.SyncAdvertisements()
+	err := s.Engine.SyncAdvertisements(ctx)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to sync advertisements: " + err.Error(),
+		})
+	}
+
+	// Return success response
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Sync advertisements endpoint will be implemented in Phase 5",
+		"status":  "success",
+		"message": "Advertisements synced successfully",
 	})
 }
 
 func (s *OverlayServer) handleStartGASPSync(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 5
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// Call Engine.StartGASPSync()
+	err := s.Engine.StartGASPSync(ctx)
+	if err != nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Failed to start GASP sync: " + err.Error(),
+		})
+	}
+
+	// Return success response
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Start GASP sync endpoint will be implemented in Phase 5",
+		"status":  "success",
+		"message": "GASP sync started and completed",
 	})
 }
 
 func (s *OverlayServer) handleEvictOutpoint(c *fiber.Ctx) error {
-	// TODO: Implement in Phase 5
+	// Check if Engine is configured
+	if s.Engine == nil {
+		return c.Status(500).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Engine not configured",
+		})
+	}
+
+	// Parse JSON body into EvictOutpointRequest
+	var request EvictOutpointRequest
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid evict outpoint payload: " + err.Error(),
+		})
+	}
+
+	// Validate required fields
+	if request.TxID == "" {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "txid field is required",
+		})
+	}
+
+	// Parse transaction ID from hex
+	txid, err := chainhash.NewHashFromHex(request.TxID)
+	if err != nil {
+		return c.Status(400).JSON(ErrorResponse{
+			Status:  "error",
+			Message: "Invalid transaction ID format: " + err.Error(),
+		})
+	}
+
+	// Create outpoint
+	outpoint := &transaction.Outpoint{
+		Txid:  *txid,
+		Index: request.OutputIndex,
+	}
+
+	// Create context from request
+	ctx := c.Context()
+
+	// If specific service is provided, evict from that service only
+	if request.Service != "" {
+		service, exists := s.Engine.LookupServices[request.Service]
+		if !exists {
+			return c.Status(404).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Service not found: " + request.Service,
+			})
+		}
+
+		err := service.OutputEvicted(ctx, outpoint)
+		if err != nil {
+			return c.Status(500).JSON(ErrorResponse{
+				Status:  "error",
+				Message: "Failed to evict outpoint from service: " + err.Error(),
+			})
+		}
+	} else {
+		// Evict from all services
+		for serviceName, service := range s.Engine.LookupServices {
+			if err := service.OutputEvicted(ctx, outpoint); err != nil {
+				// Log error but continue with other services
+				s.Logger.Printf("Warning: Failed to evict outpoint from service '%s': %v", serviceName, err)
+			}
+		}
+	}
+
+	// Return success response
 	return c.JSON(fiber.Map{
-		"status":  "placeholder",
-		"message": "Evict outpoint endpoint will be implemented in Phase 5",
+		"status":  "success",
+		"message": "Outpoint evicted",
 	})
 }
 
@@ -737,10 +1618,6 @@ func (s *OverlayServer) InitializeDatabases(ctx context.Context) error {
 	// Initialize MongoDB if configured
 	if s.MongoDB != nil {
 		s.Logger.Printf("Connecting to MongoDB...")
-		if err := s.MongoDB.Client().Connect(ctx); err != nil {
-			s.Logger.Printf("Failed to connect to MongoDB: %v", err)
-			return fmt.Errorf("MongoDB connection failed: %w", err)
-		}
 		if err := s.MongoDB.Client().Ping(ctx, nil); err != nil {
 			s.Logger.Printf("Failed to ping MongoDB: %v", err)
 			return fmt.Errorf("MongoDB ping failed: %w", err)
@@ -796,6 +1673,19 @@ func (s *OverlayServer) Start() error {
 	s.Logger.Printf("GASP Sync: %t", s.EnableGASPSync)
 	s.Logger.Printf("Verbose Logging: %t", s.VerboseLogging)
 
+	// Start background services
+	if s.QueueManager != nil {
+		if err := s.QueueManager.Start(); err != nil {
+			s.Logger.Printf("Warning: Failed to start queue manager: %v", err)
+		}
+	}
+
+	if s.WebSocketManager != nil {
+		if err := s.WebSocketManager.Start(); err != nil {
+			s.Logger.Printf("Warning: Failed to start WebSocket manager: %v", err)
+		}
+	}
+
 	// Perform initial health check
 	if err := s.CheckDatabaseHealth(ctx); err != nil {
 		s.Logger.Printf("Warning: Database health check failed: %v", err)
@@ -808,6 +1698,19 @@ func (s *OverlayServer) Start() error {
 func (s *OverlayServer) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Stop background services
+	if s.QueueManager != nil {
+		if err := s.QueueManager.Stop(); err != nil {
+			s.Logger.Printf("Error stopping queue manager: %v", err)
+		}
+	}
+
+	if s.WebSocketManager != nil {
+		if err := s.WebSocketManager.Stop(); err != nil {
+			s.Logger.Printf("Error stopping WebSocket manager: %v", err)
+		}
+	}
 
 	// Disconnect from databases
 	if s.DB != nil {
