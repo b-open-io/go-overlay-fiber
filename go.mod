@@ -6,7 +6,7 @@ require (
 	github.com/b-open-io/overlay v0.0.0-20250811192015-2902186637c8
 	github.com/bsv-blockchain/go-overlay-discovery-services v0.0.0-00010101000000-000000000000
 	github.com/bsv-blockchain/go-overlay-services v0.1.1
-	github.com/bsv-blockchain/go-sdk v1.2.6
+	github.com/bsv-blockchain/go-sdk v1.2.8
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/gofiber/contrib/websocket v1.3.2
 	github.com/gofiber/fiber/v2 v2.52.9

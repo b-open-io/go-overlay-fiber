@@ -894,16 +894,11 @@ func (s *OverlayServer) handleListTopicManagers(c *fiber.Ctx) error {
 	wantsJSON := strings.Contains(acceptHeader, "application/json") || c.Query("format") == "json"
 
 	// Collect topic managers data
-	managers := make(map[string]interface{})
+	managers := make(map[string]*overlay.MetaData)
 
 	if s.Engine != nil && s.Engine.Managers != nil {
 		for name, manager := range s.Engine.Managers {
-			managers[name] = map[string]interface{}{
-				"name":        name,
-				"type":        fmt.Sprintf("%T", manager),
-				"description": fmt.Sprintf("Topic manager for %s", name),
-				"iconURL":     "https://bsvblockchain.org/favicon.ico",
-			}
+			managers[name] = manager.GetMetaData()
 		}
 	}
 

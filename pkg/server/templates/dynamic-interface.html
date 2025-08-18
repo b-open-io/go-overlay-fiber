@@ -386,7 +386,7 @@ For documentation and examples, visit:
       try {
         let res = await fetch(`/getDocumentationForTopicManager?manager=${manager}&format=fragment`);
         let docs = await res.text();
-        let managerReadme = docs; // Already formatted HTML fragment, don't convert
+        let managerReadme = Convert(docs);
 
         let managerData = managersData[manager];
         let iconURL = managerData?.iconURL || faviconUrl;
@@ -407,7 +407,7 @@ For documentation and examples, visit:
       try {
         let res = await fetch(`/getDocumentationForLookupServiceProvider?provider=${provider}&format=fragment`);
         let docs = await res.text();
-        let providerReadme = docs; // Already formatted HTML fragment, don't convert
+        let providerReadme = Convert(docs);
 
         let providerData = providersData[provider];
         let iconURL = providerData?.iconURL || faviconUrl;
