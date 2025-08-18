@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay"
+	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 )
 
@@ -480,9 +483,7 @@ func (s *SQLStorage) buildOutput(txidStr string, vout uint32, topic string, sato
 
 	// Set locking script if present
 	if len(scriptData) > 0 {
-		// TODO: Convert scriptData bytes to script.Script
-		// For now, we'll leave this empty as we need to import the script package
-		// output.Script = script.NewFromBytes(scriptData)
+		output.Script = script.NewFromBytes(scriptData)
 	}
 
 	// Set block info if present
@@ -495,9 +496,26 @@ func (s *SQLStorage) buildOutput(txidStr string, vout uint32, topic string, sato
 
 	// Parse consumed by outpoints if present
 	if consumedByStr.Valid && consumedByStr.String != "" {
-		// Simple parsing - in production might use JSON
-		// For now, just store the raw string
-		// TODO: Implement proper outpoint parsing if needed
+		consumedByParts := strings.Split(consumedByStr.String, ",")
+		for _, part := range consumedByParts {
+			if part = strings.TrimSpace(part); part != "" {
+				txidVoutParts := strings.Split(part, ":")
+				if len(txidVoutParts) == 2 {
+					txid, err := chainhash.NewHashFromHex(txidVoutParts[0])
+					if err != nil {
+						continue // Skip invalid entries
+					}
+					vout, err := strconv.ParseUint(txidVoutParts[1], 10, 32)
+					if err != nil {
+						continue // Skip invalid entries
+					}
+					output.ConsumedBy = append(output.ConsumedBy, &transaction.Outpoint{
+						Txid:  *txid,
+						Index: uint32(vout),
+					})
+				}
+			}
+		}
 	}
 
 	// Include BEEF data if requested
