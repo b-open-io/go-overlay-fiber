@@ -369,18 +369,24 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	// Auto-configure SHIP lookup service with MongoDB if available
 	if s.MongoDB != nil {
 		if _, exists := s.Services["ls_ship"]; !exists {
-			// TODO: Create proper PushDropDecoder and Utils implementations
-			// For now, SHIP/SLAP lookup services require these dependencies
-			s.Logger.Printf("SHIP lookup service requires PushDropDecoder and Utils implementations")
+			// Create SHIP storage and lookup service
+			shipStorage := ship.NewSHIPStorage(s.MongoDB)
+			shipLookupService := ship.NewSHIPLookupService(shipStorage)
+
+			s.ConfigureLookupService("ls_ship", shipLookupService)
+			s.Logger.Printf("Auto-configured SHIP lookup service with MongoDB")
 		}
 	}
 
 	// Auto-configure SLAP lookup service with MongoDB if available
 	if s.MongoDB != nil {
 		if _, exists := s.Services["ls_slap"]; !exists {
-			// TODO: Create proper PushDropDecoder and Utils implementations
-			// For now, SHIP/SLAP lookup services require these dependencies
-			s.Logger.Printf("SLAP lookup service requires PushDropDecoder and Utils implementations")
+			// Create SLAP storage and lookup service
+			slapStorage := slap.NewSLAPStorage(s.MongoDB)
+			slapLookupService := slap.NewSLAPLookupService(slapStorage)
+
+			s.ConfigureLookupService("ls_slap", slapLookupService)
+			s.Logger.Printf("Auto-configured SLAP lookup service with MongoDB")
 		}
 	}
 
@@ -925,16 +931,11 @@ func (s *OverlayServer) handleListLookupServiceProviders(c *fiber.Ctx) error {
 	wantsJSON := strings.Contains(acceptHeader, "application/json") || c.Query("format") == "json"
 
 	// Collect lookup service providers data
-	providers := make(map[string]interface{})
+	providers := make(map[string]*overlay.MetaData)
 
 	if s.Engine != nil && s.Engine.LookupServices != nil {
 		for name, service := range s.Engine.LookupServices {
-			providers[name] = map[string]interface{}{
-				"name":        name,
-				"type":        fmt.Sprintf("%T", service),
-				"description": fmt.Sprintf("Lookup service provider for %s", name),
-				"iconURL":     "https://bsvblockchain.org/favicon.ico",
-			}
+			providers[name] = service.GetMetaData()
 		}
 	}
 
@@ -1315,10 +1316,6 @@ func (s *OverlayServer) InitializeDatabases(ctx context.Context) error {
 	// Initialize MongoDB if configured
 	if s.MongoDB != nil {
 		s.Logger.Printf("Connecting to MongoDB...")
-		if err := s.MongoDB.Client().Connect(ctx); err != nil {
-			s.Logger.Printf("Failed to connect to MongoDB: %v", err)
-			return fmt.Errorf("MongoDB connection failed: %w", err)
-		}
 		if err := s.MongoDB.Client().Ping(ctx, nil); err != nil {
 			s.Logger.Printf("Failed to ping MongoDB: %v", err)
 			return fmt.Errorf("MongoDB ping failed: %w", err)

@@ -38,16 +38,16 @@ func (tm *TemplateManager) LoadTemplates() error {
 
 	// Define template files to load
 	templateFiles := map[string]string{
-		"main":                     "main.html",
-		"dashboard":                "dashboard.html",
-		"dynamic-interface":        "dynamic-interface.html",
-		"api-tester":               "api-tester.html",
-		"topic-managers":           "topic-managers.html",
-		"lookup-services":          "lookup-services.html",
-		"topic-manager-docs":       "topic-manager-docs.html",
-		"lookup-service-docs":      "lookup-service-docs.html",
-		"topic-manager-fragment":   "topic-manager-fragment.html",
-		"lookup-service-fragment":  "lookup-service-fragment.html",
+		"main":                    "main.html",
+		"dashboard":               "dashboard.html",
+		"dynamic-interface":       "dynamic-interface.html",
+		"api-tester":              "api-tester.html",
+		"topic-managers":          "topic-managers.html",
+		"lookup-services":         "lookup-services.html",
+		"topic-manager-docs":      "topic-manager-docs.html",
+		"lookup-service-docs":     "lookup-service-docs.html",
+		"topic-manager-fragment":  "topic-manager-fragment.html",
+		"lookup-service-fragment": "lookup-service-fragment.html",
 	}
 
 	// Load each template
