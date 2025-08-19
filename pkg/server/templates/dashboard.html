@@ -64,7 +64,6 @@
             if (data.WebSocketManager) {
                 updateElement('ws-running', data.WebSocketManager.running ? 'Yes' : 'No');
                 updateElement('ws-clients', data.WebSocketManager.connected_clients || 0);
-                updateElement('ws-redis', data.WebSocketManager.redis_available ? 'Available' : 'Unavailable');
                 
                 // Update topic subscriptions
                 const topicList = document.getElementById('topic-subscriptions');
@@ -182,10 +181,6 @@
                 <div class="metric">
                     <span class="metric-label">Connected Clients:</span>
                     <span class="metric-value" id="ws-clients">{{if .WebSocketManager}}{{.WebSocketManager.connected_clients}}{{else}}N/A{{end}}</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Redis Backend:</span>
-                    <span class="metric-value" id="ws-redis">{{if .WebSocketManager}}{{if .WebSocketManager.redis_available}}Available{{else}}Unavailable{{end}}{{else}}N/A{{end}}</span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Topic Subscriptions:</span>

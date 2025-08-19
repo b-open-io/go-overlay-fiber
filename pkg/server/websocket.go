@@ -2,17 +2,14 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/b-open-io/overlay/publish"
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-	"github.com/redis/go-redis/v9"
 )
 
 // WebSocketMessage represents a message sent to WebSocket clients
@@ -43,7 +40,6 @@ type WebSocketManager struct {
 	clients     map[string]*WebSocketClient
 	clientMutex sync.RWMutex
 	publisher   publish.Publisher
-	redisClient *redis.Client
 	logger      *log.Logger
 
 	// Context and cancellation for background services
@@ -67,41 +63,10 @@ func NewWebSocketManager(publisher publish.Publisher, logger *log.Logger) (*WebS
 		running:   false,
 	}
 
-	// Try to create Redis subscriber for real-time events
-	if err := wm.setupRedisSubscriber(); err != nil {
-		logger.Printf("Warning: Redis subscriber setup failed, real-time events may be limited: %v", err)
-	}
-
 	return wm, nil
 }
 
-// setupRedisSubscriber sets up Redis pub/sub for real-time events
-func (wm *WebSocketManager) setupRedisSubscriber() error {
-	redisURL := getRedisURL()
-	if redisURL == "" {
-		return fmt.Errorf("no Redis URL configured")
-	}
-
-	opts, err := redis.ParseURL(redisURL)
-	if err != nil {
-		return fmt.Errorf("failed to parse Redis URL: %w", err)
-	}
-
-	wm.redisClient = redis.NewClient(opts)
-
-	// Test connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := wm.redisClient.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("Redis connection failed: %w", err)
-	}
-
-	wm.logger.Printf("Redis subscriber connected for WebSocket events")
-	return nil
-}
-
-// Start begins WebSocket management and Redis subscription
+// Start begins WebSocket management
 func (wm *WebSocketManager) Start() error {
 	if wm.running {
 		return fmt.Errorf("WebSocket manager is already running")
@@ -109,11 +74,6 @@ func (wm *WebSocketManager) Start() error {
 
 	// Create context for background services
 	wm.ctx, wm.cancel = context.WithCancel(context.Background())
-
-	// Start Redis subscriber if available
-	if wm.redisClient != nil {
-		go wm.subscribeToRedisEvents()
-	}
 
 	// Start client cleanup routine
 	go wm.clientCleanupLoop()
@@ -142,13 +102,6 @@ func (wm *WebSocketManager) Stop() error {
 	}
 	wm.clients = make(map[string]*WebSocketClient)
 	wm.clientMutex.Unlock()
-
-	// Close Redis connection
-	if wm.redisClient != nil {
-		if err := wm.redisClient.Close(); err != nil {
-			wm.logger.Printf("Error closing Redis connection: %v", err)
-		}
-	}
 
 	wm.running = false
 	wm.logger.Printf("WebSocket manager stopped")
@@ -284,57 +237,6 @@ func (wm *WebSocketManager) handleSubscriptionRequest(client *WebSocketClient, r
 	}
 }
 
-// subscribeToRedisEvents subscribes to Redis pub/sub events
-func (wm *WebSocketManager) subscribeToRedisEvents() {
-	wm.logger.Printf("Starting Redis event subscription for WebSocket broadcasting")
-
-	// Subscribe to all transaction processing events
-	pubsub := wm.redisClient.PSubscribe(wm.ctx, "tx_processed:*", "tx_submitted:*", "block_updated:*")
-	defer pubsub.Close()
-
-	// Process messages
-	for {
-		select {
-		case <-wm.ctx.Done():
-			return
-		default:
-			msg, err := pubsub.ReceiveMessage(wm.ctx)
-			if err != nil {
-				if wm.ctx.Err() != context.Canceled {
-					wm.logger.Printf("Redis subscription error: %v", err)
-				}
-				return
-			}
-
-			// Broadcast to WebSocket clients
-			wm.broadcastRedisEvent(msg.Channel, msg.Payload)
-		}
-	}
-}
-
-// broadcastRedisEvent broadcasts Redis events to subscribed WebSocket clients
-func (wm *WebSocketManager) broadcastRedisEvent(channel, payload string) {
-	// Parse topic from channel (e.g., "tx_processed:topic1" -> "topic1")
-	topic := "all"
-	if colonIndex := len("tx_processed:"); len(channel) > colonIndex {
-		if channel[:colonIndex] == "tx_processed:" {
-			topic = channel[colonIndex:]
-		}
-	}
-
-	// Create WebSocket message
-	wsMsg := WebSocketMessage{
-		Type:      "event",
-		Topic:     topic,
-		Data:      json.RawMessage(payload),
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-	}
-
-	// Broadcast to subscribed clients
-	wm.BroadcastToTopic(topic, wsMsg)
-	wm.BroadcastToTopic("all", wsMsg) // Also send to clients subscribed to "all"
-}
-
 // BroadcastToTopic broadcasts a message to all clients subscribed to a topic
 func (wm *WebSocketManager) BroadcastToTopic(topic string, message WebSocketMessage) {
 	wm.clientMutex.RLock()
@@ -431,20 +333,5 @@ func (wm *WebSocketManager) GetStats() map[string]interface{} {
 		"running":             wm.running,
 		"connected_clients":   len(wm.clients),
 		"topic_subscriptions": topicCounts,
-		"redis_available":     wm.redisClient != nil,
 	}
-}
-
-// getRedisURL returns the Redis URL from environment variables
-func getRedisURL() string {
-	if url := os.Getenv("REDIS_PUBLISHER_URL"); url != "" {
-		return url
-	}
-	if url := os.Getenv("REDIS_QUEUE_URL"); url != "" {
-		return url
-	}
-	if url := os.Getenv("REDIS_URL"); url != "" {
-		return url
-	}
-	return ""
 }

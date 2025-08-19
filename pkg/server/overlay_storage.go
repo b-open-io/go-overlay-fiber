@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/b-open-io/overlay/beef"
@@ -45,12 +44,8 @@ func CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL string, db *sql.
 		return nil, fmt.Errorf("failed to create BEEF storage: %w", err)
 	}
 
-	// Create publisher
-	publisherURL := os.Getenv("REDIS_PUBLISHER_URL")
-	publisher, err := createOverlayPublisher(publisherURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create publisher: %w", err)
-	}
+	// Create no-op publisher
+	publisher := &NoOpPublisher{}
 
 	// Create event data storage using overlay factory
 	overlayStorage, err := storage.CreateEventDataStorage(eventStorageURL, beefStorage, publisher)
@@ -80,8 +75,8 @@ func CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL string, db *sql.
 		logger:          logger,
 	}
 
-	logger.Printf("Overlay storage created - Event: %s, BEEF: %s, Publisher: %T",
-		getStorageType(eventStorageURL), getStorageType(beefStorageURL), publisher)
+	logger.Printf("Overlay storage created - Event: %s, BEEF: %s, Publisher: NoOp",
+		getStorageType(eventStorageURL), getStorageType(beefStorageURL))
 
 	return adapter, nil
 }
@@ -95,29 +90,6 @@ func (p *NoOpPublisher) Publish(ctx context.Context, topic string, data string) 
 	_ = topic
 	_ = data
 	return nil
-}
-
-// createOverlayPublisher creates a publisher using overlay patterns
-func createOverlayPublisher(publisherURL string) (publish.Publisher, error) {
-	if publisherURL == "" {
-		// Default to no-op publisher if no URL provided
-		return &NoOpPublisher{}, nil
-	}
-
-	// Parse URL to determine publisher type
-	if strings.HasPrefix(publisherURL, "redis://") {
-		// Create Redis publisher for production use
-		redisPublisher, err := publish.NewRedisPublish(publisherURL)
-		if err != nil {
-			log.Printf("Failed to create Redis publisher, falling back to no-op: %v", err)
-			return &NoOpPublisher{}, nil
-		}
-		log.Printf("Redis publisher created successfully")
-		return redisPublisher, nil
-	}
-
-	// Unknown scheme, default to no-op
-	return &NoOpPublisher{}, nil
 }
 
 // SQLStorageWrapper wraps existing SQLStorage to implement overlay's EventDataStorage interface
@@ -222,9 +194,6 @@ func getStorageType(storageURL string) string {
 		return "SQL"
 	}
 
-	if strings.HasPrefix(storageURL, "redis://") {
-		return "Redis"
-	}
 	if strings.HasPrefix(storageURL, "mongodb://") {
 		return "MongoDB"
 	}

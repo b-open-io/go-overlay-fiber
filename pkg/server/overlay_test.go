@@ -56,13 +56,7 @@ func TestOverlayStorageCreation(t *testing.T) {
 		t.Fatalf("Failed to create BEEF storage: %v", err)
 	}
 
-	// Test that we can get information about storage type
-	storageType := getStorageType("redis://localhost:6379")
-	if storageType != "Redis" {
-		t.Errorf("Expected Redis, got %s", storageType)
-	}
-
-	storageType = getStorageType("./test.db")
+	storageType := getStorageType("./test.db")
 	if storageType != "SQLite" {
 		t.Errorf("Expected SQLite, got %s", storageType)
 	}

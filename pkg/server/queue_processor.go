@@ -4,15 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"strconv"
 	"time"
 
-	"github.com/b-open-io/overlay/processor"
 	"github.com/b-open-io/overlay/publish"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
-	"github.com/redis/go-redis/v9"
 )
 
 // OverlayTransactionProcessor implements the processor.TransactionProcessor interface
@@ -92,126 +88,36 @@ func (p *OverlayTransactionProcessor) ProcessTransaction(ctx context.Context, tx
 	return topics, nil
 }
 
-// QueueManager manages the queue processor and background services
+// QueueManager manages background services
 type QueueManager struct {
-	processor   *processor.QueueProcessor
-	redisClient *redis.Client
-	config      *processor.ProcessorConfig
-	logger      *log.Logger
-
-	// Context and cancellation for background processing
-	ctx    context.Context
-	cancel context.CancelFunc
+	logger *log.Logger
 
 	// Status tracking
 	running bool
 }
 
-// NewQueueManager creates a new queue manager with Redis connection
+// NewQueueManager creates a new queue manager
 func NewQueueManager(engine *engine.Engine, publisher publish.Publisher, logger *log.Logger) (*QueueManager, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
 
-	// Get Redis connection string from environment
-	redisURL := os.Getenv("REDIS_QUEUE_URL")
-	if redisURL == "" {
-		redisURL = os.Getenv("REDIS_URL")
-	}
-	if redisURL == "" {
-		redisURL = "redis://localhost:6379" // Default Redis URL
-	}
-
-	// Parse Redis options
-	opts, err := redis.ParseURL(redisURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse Redis URL %s: %w", redisURL, err)
-	}
-
-	// Create Redis client
-	redisClient := redis.NewClient(opts)
-
-	// Test Redis connection
-	ctx := context.Background()
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		logger.Printf("Warning: Redis connection failed, queue processing will be disabled: %v", err)
-		// Don't return error - allow server to start without queue processing
-		return &QueueManager{
-			logger:  logger,
-			running: false,
-		}, nil
-	}
-
-	// Create processor configuration
-	config := processor.DefaultProcessorConfig()
-
-	// Override with environment variables if present
-	if queueName := os.Getenv("REDIS_QUEUE_NAME"); queueName != "" {
-		config.QueueName = queueName
-	} else {
-		config.QueueName = "overlay_tx_queue"
-	}
-
-	if concurrencyStr := os.Getenv("QUEUE_CONCURRENCY"); concurrencyStr != "" {
-		if concurrency, err := strconv.Atoi(concurrencyStr); err == nil && concurrency > 0 {
-			config.Concurrency = concurrency
-		}
-	}
-
-	if batchSizeStr := os.Getenv("QUEUE_BATCH_SIZE"); batchSizeStr != "" {
-		if batchSize, err := strconv.ParseInt(batchSizeStr, 10, 64); err == nil && batchSize > 0 {
-			config.BatchSize = batchSize
-		}
-	}
-
-	if sleepStr := os.Getenv("QUEUE_EMPTY_SLEEP"); sleepStr != "" {
-		if sleep, err := time.ParseDuration(sleepStr); err == nil {
-			config.EmptyQueueSleep = sleep
-		}
-	}
-
-	// Create transaction processor
-	txProcessor := NewOverlayTransactionProcessor(engine, publisher, logger)
-
-	// Create queue processor
-	queueProcessor := processor.NewQueueProcessor(config, redisClient, txProcessor)
+	logger.Printf("Queue manager created")
 
 	return &QueueManager{
-		processor:   queueProcessor,
-		redisClient: redisClient,
-		config:      config,
-		logger:      logger,
-		running:     false,
+		logger:  logger,
+		running: false,
 	}, nil
 }
 
-// Start begins background queue processing
+// Start begins background queue process
 func (qm *QueueManager) Start() error {
-	if qm.processor == nil {
-		qm.logger.Printf("Queue processor not available - skipping background processing")
-		return nil
-	}
-
 	if qm.running {
 		return fmt.Errorf("queue manager is already running")
 	}
 
-	// Create context for background processing
-	qm.ctx, qm.cancel = context.WithCancel(context.Background())
-
-	// Start queue processing in background
-	go func() {
-		qm.logger.Printf("Starting background queue processing for queue '%s'", qm.config.QueueName)
-
-		if err := qm.processor.Start(qm.ctx); err != nil && err != context.Canceled {
-			qm.logger.Printf("Queue processor error: %v", err)
-		}
-
-		qm.logger.Printf("Background queue processing stopped")
-	}()
-
+	qm.logger.Printf("Queue manager started")
 	qm.running = true
-	qm.logger.Printf("Queue manager started successfully")
 	return nil
 }
 
@@ -221,58 +127,22 @@ func (qm *QueueManager) Stop() error {
 		return nil
 	}
 
-	qm.logger.Printf("Stopping queue manager...")
-
-	if qm.cancel != nil {
-		qm.cancel()
-	}
-
-	// Close Redis connection
-	if qm.redisClient != nil {
-		if err := qm.redisClient.Close(); err != nil {
-			qm.logger.Printf("Error closing Redis connection: %v", err)
-		}
-	}
-
-	qm.running = false
 	qm.logger.Printf("Queue manager stopped")
+	qm.running = false
 	return nil
 }
 
 // GetQueueLength returns the current length of the processing queue
 func (qm *QueueManager) GetQueueLength() (int64, error) {
-	if qm.processor == nil {
-		return 0, fmt.Errorf("queue processor not available")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	return qm.processor.GetQueueLength(ctx)
+	return 0, nil
 }
 
 // GetStatus returns the current status of the queue manager
 func (qm *QueueManager) GetStatus() map[string]interface{} {
 	status := map[string]interface{}{
-		"running":   qm.running,
-		"available": qm.processor != nil,
-		"redis_url": os.Getenv("REDIS_QUEUE_URL"),
-	}
-
-	if qm.config != nil {
-		status["config"] = map[string]interface{}{
-			"queue_name":        qm.config.QueueName,
-			"concurrency":       qm.config.Concurrency,
-			"batch_size":        qm.config.BatchSize,
-			"empty_queue_sleep": qm.config.EmptyQueueSleep.String(),
-		}
-	}
-
-	// Get queue length if available
-	if qm.processor != nil {
-		if length, err := qm.GetQueueLength(); err == nil {
-			status["queue_length"] = length
-		}
+		"running":      qm.running,
+		"available":    false,
+		"queue_length": 0,
 	}
 
 	return status
@@ -280,27 +150,7 @@ func (qm *QueueManager) GetStatus() map[string]interface{} {
 
 // EnqueueTransaction adds a transaction to the processing queue
 func (qm *QueueManager) EnqueueTransaction(txid *chainhash.Hash, blockHeight uint32, blockIndex uint64) error {
-	if qm.redisClient == nil {
-		return fmt.Errorf("Redis client not available")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Add to Redis queue with score based on block height and index
-	score := float64(blockHeight)*1e9 + float64(blockIndex)
-
-	err := qm.redisClient.ZAdd(ctx, qm.config.QueueName, redis.Z{
-		Member: txid.String(),
-		Score:  score,
-	}).Err()
-
-	if err != nil {
-		return fmt.Errorf("failed to enqueue transaction %s: %w", txid.String(), err)
-	}
-
-	qm.logger.Printf("Enqueued transaction %s for processing (height: %d, index: %d)",
+	qm.logger.Printf("Transaction %s would be enqueued (height: %d, index: %d)",
 		txid.String(), blockHeight, blockIndex)
-
 	return nil
 }

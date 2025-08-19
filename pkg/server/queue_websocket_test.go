@@ -19,7 +19,7 @@ func TestQueueManagerCreation(t *testing.T) {
 	// Create queue manager
 	qm, err := NewQueueManager(eng, &NoOpPublisher{}, log.Default())
 
-	// Should not fail even if Redis is not available
+	// Should not fail
 	assert.NoError(t, err)
 	assert.NotNil(t, qm)
 
@@ -34,7 +34,7 @@ func TestWebSocketManagerCreation(t *testing.T) {
 	// Create WebSocket manager
 	wm, err := NewWebSocketManager(&NoOpPublisher{}, log.Default())
 
-	// Should not fail even if Redis is not available
+	// Should not fail
 	assert.NoError(t, err)
 	assert.NotNil(t, wm)
 
@@ -84,11 +84,10 @@ func TestBackgroundServicesLifecycle(t *testing.T) {
 	// Give them a moment to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Check they're running (queue manager may not run if Redis is unavailable)
+	// Check they're running
 	qmStatus := qm.GetStatus()
 	wmStats := wm.GetStats()
 
-	// Queue manager may not be running if Redis is unavailable
 	if qmStatus["available"].(bool) {
 		assert.True(t, qmStatus["running"].(bool))
 	}
