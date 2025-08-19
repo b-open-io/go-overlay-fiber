@@ -313,6 +313,17 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		syncConfig = make(map[string]engine.SyncConfiguration)
 	}
 
+	// Set default SLAP trackers if not provided in engine config
+	slapTrackers := s.EngineConfig.SlapTrackers
+	if len(slapTrackers) == 0 {
+		if s.Network == "test" {
+			slapTrackers = []string{"https://testnet-users.bapp.dev"}
+		} else {
+			slapTrackers = []string{"https://users.bapp.dev"}
+		}
+		s.Logger.Printf("Using default SLAP trackers for network '%s': %v", s.Network, slapTrackers)
+	}
+
 	// Create Engine configuration with real storage
 	engineConfig := engine.Engine{
 		HostingURL:           s.AdvertisableFQDN,
@@ -324,6 +335,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		Broadcaster:          s.EngineConfig.Broadcaster,
 		Advertiser:           s.EngineConfig.Advertiser,
 		SyncConfiguration:    syncConfig,
+		SLAPTrackers:         slapTrackers,
 		BroadcastFacilitator: s.EngineConfig.OverlayBroadcastFacilitator,
 	}
 
