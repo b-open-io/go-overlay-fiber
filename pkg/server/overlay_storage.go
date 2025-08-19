@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/b-open-io/overlay/beef"
 	"github.com/b-open-io/overlay/publish"
@@ -173,11 +175,98 @@ func (s *SQLStorageWrapper) GetTransactionsByTopicAndHeight(ctx context.Context,
 }
 
 func (s *SQLStorageWrapper) SaveEvents(ctx context.Context, outpoint *transaction.Outpoint, events []string, height uint32, idx uint64, data interface{}) error {
-	return fmt.Errorf("SaveEvents not implemented in SQL wrapper")
+	if len(events) == 0 && data == nil {
+		return nil
+	}
+
+	// Calculate score based on height and index
+	var score float64
+	if height > 0 {
+		score = float64(height) + float64(idx)/1e9
+	} else {
+		// Use current timestamp if no height provided
+		score = float64(time.Now().Unix())
+	}
+
+	outpointStr := outpoint.String()
+
+	// Get the underlying SQL database from the wrapped storage
+	sqlStorage, ok := s.sqlStorage.(*SQLStorage)
+	if !ok {
+		return fmt.Errorf("underlying storage is not SQLStorage")
+	}
+
+	// Begin transaction
+	tx, err := sqlStorage.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Insert events into events table
+	for _, event := range events {
+		_, err = tx.ExecContext(ctx, `
+			INSERT OR REPLACE INTO events (event, outpoint, score)
+			VALUES (?, ?, ?)`,
+			event, outpointStr, score)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Update data in outputs table if provided
+	if data != nil {
+		dataJSON, err := json.Marshal(data)
+		if err != nil {
+			return err
+		}
+
+		// Get topic from outputs table first
+		var topic string
+		err = tx.QueryRowContext(ctx, `SELECT topic FROM outputs WHERE outpoint = ? LIMIT 1`, outpointStr).Scan(&topic)
+		if err != nil {
+			return fmt.Errorf("failed to find output topic for outpoint %s: %w", outpointStr, err)
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			UPDATE outputs
+			SET data = ?
+			WHERE outpoint = ? AND topic = ?`,
+			string(dataJSON), outpointStr, topic)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Commit the transaction
+	return tx.Commit()
 }
 
 func (s *SQLStorageWrapper) FindEvents(ctx context.Context, outpoint *transaction.Outpoint) ([]string, error) {
-	return nil, fmt.Errorf("FindEvents not implemented in SQL wrapper")
+	// Get the underlying SQL database from the wrapped storage
+	sqlStorage, ok := s.sqlStorage.(*SQLStorage)
+	if !ok {
+		return nil, fmt.Errorf("underlying storage is not SQLStorage")
+	}
+
+	rows, err := sqlStorage.db.QueryContext(ctx,
+		"SELECT event FROM events WHERE outpoint = ?",
+		outpoint.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []string
+	for rows.Next() {
+		var event string
+		if err := rows.Scan(&event); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+
+	return events, rows.Err()
 }
 
 func (s *SQLStorageWrapper) LookupOutpoints(ctx context.Context, question *storage.EventQuestion, includeData ...bool) ([]*storage.OutpointResult, error) {
