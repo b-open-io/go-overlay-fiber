@@ -131,22 +131,22 @@ func TestHandleSubmitTopicsParsing(t *testing.T) {
 	}{
 		{
 			name:           "Single topic - unknown topic error",
-			topicsHeader:   "test",
+			topicsHeader:   `["test"]`,
 			expectedStatus: 500, // Engine returns error for unknown topics
 		},
 		{
 			name:           "Multiple topics - unknown topic error",
-			topicsHeader:   "topic1,topic2,topic3",
+			topicsHeader:   `["topic1","topic2","topic3"]`,
 			expectedStatus: 500, // Engine returns error for unknown topics
 		},
 		{
 			name:           "Topics with spaces - unknown topic error",
-			topicsHeader:   "topic1, topic2 , topic3",
+			topicsHeader:   `["topic1","topic2","topic3"]`,
 			expectedStatus: 500, // Engine returns error for unknown topics
 		},
 		{
 			name:           "Empty topic in list - unknown topic error",
-			topicsHeader:   "topic1,,topic3",
+			topicsHeader:   `["topic1","","topic3"]`,
 			expectedStatus: 500, // Engine returns error for unknown topics
 		},
 	}
@@ -172,7 +172,7 @@ func TestHandleSubmitEngineIntegration(t *testing.T) {
 
 	testBody := mustDecodeHex(testBEEFHex)
 	req := httptest.NewRequest("POST", "/submit", bytes.NewReader(testBody))
-	req.Header.Set("x-topics", "test,integration")
+	req.Header.Set("x-topics", `["test","integration"]`)
 
 	resp, err := server.App.Test(req)
 	require.NoError(t, err)

@@ -59,12 +59,11 @@ type OverlayServer struct {
 	Engine *engine.Engine
 
 	// Services
-	Managers        map[string]engine.TopicManager
-	Services        map[string]engine.LookupService
-	ChainTracker    chaintracker.ChainTracker
-	WebUIConfig     UIConfig
-	EngineConfig    EngineConfig
-	MigrationsToRun []Migration
+	Managers     map[string]engine.TopicManager
+	Services     map[string]engine.LookupService
+	ChainTracker chaintracker.ChainTracker
+	WebUIConfig  UIConfig
+	EngineConfig EngineConfig
 
 	// Fiber app
 	App *fiber.App
@@ -100,7 +99,6 @@ func NewOverlayServer(name, privateKey, fqdn string, adminToken ...string) *Over
 		EnableGASPSync:   true,
 		Managers:         make(map[string]engine.TopicManager),
 		Services:         make(map[string]engine.LookupService),
-		MigrationsToRun:  make([]Migration, 0),
 		TemplateManager:  NewTemplateManager(),
 	}
 }
@@ -216,47 +214,6 @@ func (s *OverlayServer) ConfigureTopicManager(name string, manager engine.TopicM
 func (s *OverlayServer) ConfigureLookupService(name string, service engine.LookupService) *OverlayServer {
 	s.Services[name] = service
 	s.Logger.Printf("Lookup service '%s' configured", name)
-	return s
-}
-
-// ConfigureLookupServiceWithDB creates a lookup service with SQL database and migrations
-func (s *OverlayServer) ConfigureLookupServiceWithDB(name string, factory LookupServiceFactory) *OverlayServer {
-	if s.DB == nil {
-		s.Logger.Printf("Warning: ConfigureLookupServiceWithDB called but no SQL database configured")
-		return s
-	}
-
-	service, migrations, err := factory(s.DB)
-	if err != nil {
-		s.Logger.Printf("Error creating lookup service '%s': %v", name, err)
-		return s
-	}
-
-	s.Services[name] = service
-
-	// Add migrations to the list to be run
-	s.MigrationsToRun = append(s.MigrationsToRun, migrations...)
-
-	s.Logger.Printf("Lookup service '%s' configured with SQL database and %d migrations", name, len(migrations))
-	return s
-}
-
-// ConfigureLookupServiceWithMongo creates a lookup service with MongoDB
-func (s *OverlayServer) ConfigureLookupServiceWithMongo(name string, factory MongoLookupServiceFactory) *OverlayServer {
-	if s.MongoDB == nil {
-		s.Logger.Printf("Warning: ConfigureLookupServiceWithMongo called but no MongoDB configured")
-		return s
-	}
-
-	service, err := factory(s.MongoDB)
-	if err != nil {
-		s.Logger.Printf("Error creating lookup service '%s': %v", name, err)
-		return s
-	}
-
-	s.Services[name] = service
-
-	s.Logger.Printf("Lookup service '%s' configured with MongoDB", name)
 	return s
 }
 
@@ -470,12 +427,11 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 
 // initializeBackgroundServices initializes queue processing and WebSocket management
 func (s *OverlayServer) initializeBackgroundServices() error {
+	// TODO: Add publisher to OverlayServer and get from there
 	// Get publisher from overlay storage adapter
 	var publisher publish.Publisher
 	if overlayAdapter, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
 		publisher = overlayAdapter.GetPublisher()
-	} else if sqlWrapper, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
-		publisher = sqlWrapper.GetPublisher()
 	}
 
 	// Initialize queue manager
@@ -778,12 +734,6 @@ func (s *OverlayServer) collectDashboardData() *DashboardData {
 					"event_storage": os.Getenv("EVENT_STORAGE"),
 					"beef_storage":  os.Getenv("BEEF_STORAGE"),
 				}
-			} else if _, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
-				data.StorageType = "sql_wrapper"
-				data.StorageStatus = "active"
-				data.StorageConfig = map[string]interface{}{
-					"type": "sql_with_overlay_features",
-				}
 			} else {
 				data.StorageType = "basic_storage"
 				data.StorageStatus = "active"
@@ -807,8 +757,6 @@ func (s *OverlayServer) handleDynamicInterface(c *fiber.Ctx) error {
 	if s.Engine != nil && s.Engine.Storage != nil {
 		if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
 			storageInfo = "Overlay Storage"
-		} else if _, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
-			storageInfo = "SQL + Overlay Features"
 		} else {
 			storageInfo = "Basic Storage"
 		}
@@ -1648,17 +1596,6 @@ func (s *OverlayServer) InitializeDatabases(ctx context.Context) error {
 			return fmt.Errorf("SQL database connection failed: %w", err)
 		}
 		s.Logger.Printf("SQL database connected successfully")
-
-		// Run database migrations using storage
-		storage, err := NewSQLStorage(s.DB)
-		if err != nil {
-			s.Logger.Printf("Error creating storage for migrations: %v", err)
-			return fmt.Errorf("failed to create storage for migrations: %w", err)
-		}
-		if err := storage.RunMigrations(ctx, s.MigrationsToRun, s.Logger); err != nil {
-			s.Logger.Printf("Database migration failed: %v", err)
-			return fmt.Errorf("database migration failed: %w", err)
-		}
 	}
 
 	// Initialize MongoDB if configured

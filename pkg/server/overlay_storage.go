@@ -3,12 +3,10 @@ package server
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/b-open-io/overlay/beef"
 	"github.com/b-open-io/overlay/publish"
@@ -52,22 +50,7 @@ func CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL string, db *sql.
 	// Create event data storage using overlay factory
 	overlayStorage, err := storage.CreateEventDataStorage(eventStorageURL, beefStorage, publisher)
 	if err != nil {
-		// Fallback to SQL storage if URL-based creation fails and we have a database
-		if db != nil {
-			logger.Printf("Failed to create storage from URL '%s', falling back to SQL: %v", eventStorageURL, err)
-			sqlStorage, sqlErr := NewSQLStorage(db)
-			if sqlErr != nil {
-				return nil, fmt.Errorf("failed to create overlay storage: %w, and failed to create fallback SQL storage: %w", err, sqlErr)
-			}
-			// Wrap SQL storage with overlay adapter
-			overlayStorage = &SQLStorageWrapper{
-				sqlStorage:  sqlStorage,
-				beefStorage: beefStorage,
-				publisher:   publisher,
-			}
-		} else {
-			return nil, fmt.Errorf("failed to create overlay storage from URL '%s': %w", eventStorageURL, err)
-		}
+		return nil, fmt.Errorf("failed to create overlay storage from URL '%s': %w", eventStorageURL, err)
 	}
 
 	adapter := &OverlayStorageAdapter{
@@ -92,189 +75,6 @@ func (p *NoOpPublisher) Publish(ctx context.Context, topic string, data string) 
 	_ = topic
 	_ = data
 	return nil
-}
-
-// SQLStorageWrapper wraps existing SQLStorage to implement overlay's EventDataStorage interface
-type SQLStorageWrapper struct {
-	sqlStorage  engine.Storage
-	beefStorage beef.BeefStorage
-	publisher   publish.Publisher
-}
-
-// GetBeefStorage returns the underlying BEEF storage implementation
-func (s *SQLStorageWrapper) GetBeefStorage() beef.BeefStorage {
-	return s.beefStorage
-}
-
-// GetPublisher returns the underlying publisher implementation
-func (s *SQLStorageWrapper) GetPublisher() publish.Publisher {
-	return s.publisher
-}
-
-// Implement engine.Storage interface by delegating to sqlStorage
-func (s *SQLStorageWrapper) InsertOutput(ctx context.Context, output *engine.Output) error {
-	return s.sqlStorage.InsertOutput(ctx, output)
-}
-
-func (s *SQLStorageWrapper) FindOutput(ctx context.Context, outpoint *transaction.Outpoint, topic *string, spent *bool, includeBEEF bool) (*engine.Output, error) {
-	return s.sqlStorage.FindOutput(ctx, outpoint, topic, spent, includeBEEF)
-}
-
-func (s *SQLStorageWrapper) FindOutputs(ctx context.Context, outpoints []*transaction.Outpoint, topic string, spent *bool, includeBEEF bool) ([]*engine.Output, error) {
-	return s.sqlStorage.FindOutputs(ctx, outpoints, topic, spent, includeBEEF)
-}
-
-func (s *SQLStorageWrapper) FindOutputsForTransaction(ctx context.Context, txid *chainhash.Hash, includeBEEF bool) ([]*engine.Output, error) {
-	return s.sqlStorage.FindOutputsForTransaction(ctx, txid, includeBEEF)
-}
-
-func (s *SQLStorageWrapper) FindUTXOsForTopic(ctx context.Context, topic string, since float64, limit uint32, includeBEEF bool) ([]*engine.Output, error) {
-	return s.sqlStorage.FindUTXOsForTopic(ctx, topic, since, limit, includeBEEF)
-}
-
-func (s *SQLStorageWrapper) DeleteOutput(ctx context.Context, outpoint *transaction.Outpoint, topic string) error {
-	return s.sqlStorage.DeleteOutput(ctx, outpoint, topic)
-}
-
-func (s *SQLStorageWrapper) MarkUTXOsAsSpent(ctx context.Context, outpoints []*transaction.Outpoint, topic string, spendTxid *chainhash.Hash) error {
-	return s.sqlStorage.MarkUTXOsAsSpent(ctx, outpoints, topic, spendTxid)
-}
-
-func (s *SQLStorageWrapper) UpdateConsumedBy(ctx context.Context, outpoint *transaction.Outpoint, topic string, consumedBy []*transaction.Outpoint) error {
-	return s.sqlStorage.UpdateConsumedBy(ctx, outpoint, topic, consumedBy)
-}
-
-func (s *SQLStorageWrapper) UpdateTransactionBEEF(ctx context.Context, txid *chainhash.Hash, beef []byte) error {
-	return s.sqlStorage.UpdateTransactionBEEF(ctx, txid, beef)
-}
-
-func (s *SQLStorageWrapper) UpdateOutputBlockHeight(ctx context.Context, outpoint *transaction.Outpoint, topic string, blockHeight uint32, blockIndex uint64, ancillaryBeef []byte) error {
-	return s.sqlStorage.UpdateOutputBlockHeight(ctx, outpoint, topic, blockHeight, blockIndex, ancillaryBeef)
-}
-
-func (s *SQLStorageWrapper) InsertAppliedTransaction(ctx context.Context, tx *overlay.AppliedTransaction) error {
-	return s.sqlStorage.InsertAppliedTransaction(ctx, tx)
-}
-
-func (s *SQLStorageWrapper) DoesAppliedTransactionExist(ctx context.Context, tx *overlay.AppliedTransaction) (bool, error) {
-	return s.sqlStorage.DoesAppliedTransactionExist(ctx, tx)
-}
-
-func (s *SQLStorageWrapper) UpdateLastInteraction(ctx context.Context, host string, topic string, since float64) error {
-	return s.sqlStorage.UpdateLastInteraction(ctx, host, topic, since)
-}
-
-func (s *SQLStorageWrapper) GetLastInteraction(ctx context.Context, host string, topic string) (float64, error) {
-	return s.sqlStorage.GetLastInteraction(ctx, host, topic)
-}
-
-// Implement overlay storage.EventDataStorage specific methods
-// These are placeholder implementations
-func (s *SQLStorageWrapper) GetTransactionsByTopicAndHeight(ctx context.Context, topic string, height uint32) ([]*storage.TransactionData, error) {
-	return nil, fmt.Errorf("GetTransactionsByTopicAndHeight not implemented in SQL wrapper")
-}
-
-func (s *SQLStorageWrapper) SaveEvents(ctx context.Context, outpoint *transaction.Outpoint, events []string, height uint32, idx uint64, data interface{}) error {
-	if len(events) == 0 && data == nil {
-		return nil
-	}
-
-	// Calculate score based on height and index
-	var score float64
-	if height > 0 {
-		score = float64(height) + float64(idx)/1e9
-	} else {
-		// Use current timestamp if no height provided
-		score = float64(time.Now().Unix())
-	}
-
-	outpointStr := outpoint.String()
-
-	// Get the underlying SQL database from the wrapped storage
-	sqlStorage, ok := s.sqlStorage.(*SQLStorage)
-	if !ok {
-		return fmt.Errorf("underlying storage is not SQLStorage")
-	}
-
-	// Begin transaction
-	tx, err := sqlStorage.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Insert events into events table
-	for _, event := range events {
-		_, err = tx.ExecContext(ctx, `
-			INSERT OR REPLACE INTO events (event, outpoint, score)
-			VALUES (?, ?, ?)`,
-			event, outpointStr, score)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Update data in outputs table if provided
-	if data != nil {
-		dataJSON, err := json.Marshal(data)
-		if err != nil {
-			return err
-		}
-
-		// Get topic from outputs table first
-		var topic string
-		err = tx.QueryRowContext(ctx, `SELECT topic FROM outputs WHERE outpoint = ? LIMIT 1`, outpointStr).Scan(&topic)
-		if err != nil {
-			return fmt.Errorf("failed to find output topic for outpoint %s: %w", outpointStr, err)
-		}
-
-		_, err = tx.ExecContext(ctx, `
-			UPDATE outputs
-			SET data = ?
-			WHERE outpoint = ? AND topic = ?`,
-			string(dataJSON), outpointStr, topic)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Commit the transaction
-	return tx.Commit()
-}
-
-func (s *SQLStorageWrapper) FindEvents(ctx context.Context, outpoint *transaction.Outpoint) ([]string, error) {
-	// Get the underlying SQL database from the wrapped storage
-	sqlStorage, ok := s.sqlStorage.(*SQLStorage)
-	if !ok {
-		return nil, fmt.Errorf("underlying storage is not SQLStorage")
-	}
-
-	rows, err := sqlStorage.db.QueryContext(ctx,
-		"SELECT event FROM events WHERE outpoint = ?",
-		outpoint.String())
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var events []string
-	for rows.Next() {
-		var event string
-		if err := rows.Scan(&event); err != nil {
-			return nil, err
-		}
-		events = append(events, event)
-	}
-
-	return events, rows.Err()
-}
-
-func (s *SQLStorageWrapper) LookupOutpoints(ctx context.Context, question *storage.EventQuestion, includeData ...bool) ([]*storage.OutpointResult, error) {
-	return nil, fmt.Errorf("LookupOutpoints not implemented in SQL wrapper")
-}
-
-func (s *SQLStorageWrapper) GetOutputData(ctx context.Context, outpoint *transaction.Outpoint) (interface{}, error) {
-	return nil, fmt.Errorf("GetOutputData not implemented in SQL wrapper")
 }
 
 // getStorageType returns a human-readable storage type from URL
