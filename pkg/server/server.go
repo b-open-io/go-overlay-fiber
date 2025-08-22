@@ -12,6 +12,7 @@ import (
 
 	"github.com/b-open-io/overlay/publish"
 	"github.com/b-open-io/overlay/storage"
+	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/advertiser"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/ship"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/slap"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
@@ -85,6 +86,11 @@ func NewOverlayServer(name, privateKey, fqdn string, adminToken ...string) *Over
 		token = adminToken[0]
 	} else {
 		token = uuid.New().String()
+	}
+
+	if !strings.HasSuffix(fqdn, "/") {
+		// Ensure the hosting URL ends with a slash
+		fqdn += "/"
 	}
 
 	return &OverlayServer{
@@ -281,6 +287,31 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		s.Logger.Printf("Using default SLAP trackers for network '%s': %v", s.Network, slapTrackers)
 	}
 
+	// Prepare advertiser if not set by the user
+	var adv = s.EngineConfig.Advertiser
+	if adv == nil {
+		// Create AuthenticatedWalletAdvertiser for production storage services
+		storageURL := "https://storage.babbage.systems"
+		if s.Network == "test" {
+			storageURL = "https://staging-storage.babbage.systems"
+		}
+
+		// Use WalletAdvertiser from go-overlay-discovery-services
+		walletAdv, err := advertiser.NewWalletAdvertiser(
+			s.Network,
+			s.PrivateKey,
+			storageURL,
+			s.AdvertisableFQDN,
+			nil, // lookupResolverConfig - can be nil for basic functionality
+		)
+		if err != nil {
+			s.Logger.Printf("Warning: Failed to create WalletAdvertiser for FQDN %s: %v - SHIP and SLAP will be disabled.", s.AdvertisableFQDN, err)
+		} else {
+			adv = walletAdv
+			s.Logger.Printf("WalletAdvertiser initialized for FQDN: %s", s.AdvertisableFQDN)
+		}
+	}
+
 	// Create Engine configuration with real storage
 	engineConfig := engine.Engine{
 		HostingURL:           s.AdvertisableFQDN,
@@ -290,7 +321,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		LogPrefix:            s.Name,
 		ChainTracker:         s.ChainTracker,
 		Broadcaster:          s.EngineConfig.Broadcaster,
-		Advertiser:           s.EngineConfig.Advertiser,
+		Advertiser:           adv,
 		SyncConfiguration:    syncConfig,
 		SLAPTrackers:         slapTrackers,
 		BroadcastFacilitator: s.EngineConfig.OverlayBroadcastFacilitator,
@@ -335,22 +366,22 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	// Auto-configure SHIP topic manager if not already configured
 	if _, exists := s.Managers["tm_ship"]; !exists {
-		var shipStorage ship.SHIPStorageInterface
+		var shipStorage ship.StorageInterface
 		if s.MongoDB != nil {
-			shipStorage = ship.NewSHIPStorage(s.MongoDB)
+			shipStorage = ship.NewStorage(s.MongoDB)
 		}
-		shipManager := ship.NewSHIPTopicManager(shipStorage, nil)
+		shipManager := ship.NewTopicManager(shipStorage, nil)
 		s.ConfigureTopicManager("tm_ship", shipManager)
 		s.Logger.Printf("Auto-configured SHIP topic manager")
 	}
 
 	// Auto-configure SLAP topic manager if not already configured
 	if _, exists := s.Managers["tm_slap"]; !exists {
-		var slapStorage slap.SLAPStorageInterface
+		var slapStorage slap.StorageInterface
 		if s.MongoDB != nil {
-			slapStorage = slap.NewSLAPStorage(s.MongoDB)
+			slapStorage = slap.NewStorage(s.MongoDB)
 		}
-		slapManager := slap.NewSLAPTopicManager(slapStorage, nil)
+		slapManager := slap.NewTopicManager(slapStorage, nil)
 		s.ConfigureTopicManager("tm_slap", slapManager)
 		s.Logger.Printf("Auto-configured SLAP topic manager")
 	}
@@ -359,8 +390,8 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	if s.MongoDB != nil {
 		if _, exists := s.Services["ls_ship"]; !exists {
 			// Create SHIP storage and lookup service
-			shipStorage := ship.NewSHIPStorage(s.MongoDB)
-			shipLookupService := ship.NewSHIPLookupService(shipStorage)
+			shipStorage := ship.NewStorage(s.MongoDB)
+			shipLookupService := ship.NewLookupService(shipStorage)
 
 			s.ConfigureLookupService("ls_ship", shipLookupService)
 			s.Logger.Printf("Auto-configured SHIP lookup service with MongoDB")
@@ -371,8 +402,8 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	if s.MongoDB != nil {
 		if _, exists := s.Services["ls_slap"]; !exists {
 			// Create SLAP storage and lookup service
-			slapStorage := slap.NewSLAPStorage(s.MongoDB)
-			slapLookupService := slap.NewSLAPLookupService(slapStorage)
+			slapStorage := slap.NewStorage(s.MongoDB)
+			slapLookupService := slap.NewLookupService(slapStorage)
 
 			s.ConfigureLookupService("ls_slap", slapLookupService)
 			s.Logger.Printf("Auto-configured SLAP lookup service with MongoDB")
@@ -1676,6 +1707,16 @@ func (s *OverlayServer) Start() error {
 
 	// Automatic startup synchronization (matching overlay-express behavior)
 	if s.Engine != nil {
+		if s.Engine.Advertiser != nil {
+			if a, ok := s.Engine.Advertiser.(*advertiser.WalletAdvertiser); ok {
+				if err := a.Init(); err != nil {
+					s.Logger.Printf("Warning: Failed to initialize wallet advertiser: %v", err)
+				} else {
+					s.Logger.Printf("Wallet advertiser initialized successfully")
+				}
+			}
+		}
+
 		// Attempt to sync advertisements
 		if err := s.Engine.SyncAdvertisements(ctx); err != nil {
 			s.Logger.Printf("Warning: Error syncing advertisements: %v", err)

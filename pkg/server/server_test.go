@@ -218,7 +218,7 @@ func TestServerConfiguration(t *testing.T) {
 
 	assert.Equal(t, "test-server", server.Name)
 	assert.Equal(t, "test-private-key", server.PrivateKey)
-	assert.Equal(t, "localhost:3000", server.AdvertisableFQDN)
+	assert.Equal(t, "http://localhost:3000/", server.AdvertisableFQDN)
 	assert.NotNil(t, server.Engine)
 	assert.NotNil(t, server.Engine.Storage)
 	assert.NotNil(t, server.DB)
