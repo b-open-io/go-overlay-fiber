@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/b-open-io/overlay/beef"
-	"github.com/b-open-io/overlay/publish"
+	"github.com/b-open-io/overlay/pubsub"
 	"github.com/b-open-io/overlay/storage"
 )
 
@@ -75,7 +75,7 @@ func TestPublisherInterface(t *testing.T) {
 	publisher := &NoOpPublisher{}
 
 	// Test that it implements the interface properly
-	var _ publish.Publisher = publisher
+	var _ pubsub.PubSub = publisher
 
 	// Test publish functionality
 	err := publisher.Publish(context.Background(), "test-topic", "test-data")

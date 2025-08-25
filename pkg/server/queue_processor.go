@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/b-open-io/overlay/publish"
+	"github.com/b-open-io/overlay/pubsub"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 )
@@ -15,12 +15,12 @@ import (
 // It integrates with the existing Engine to process transactions from the queue
 type OverlayTransactionProcessor struct {
 	engine    *engine.Engine
-	publisher publish.Publisher
+	publisher pubsub.PubSub
 	logger    *log.Logger
 }
 
 // NewOverlayTransactionProcessor creates a new transaction processor
-func NewOverlayTransactionProcessor(engine *engine.Engine, publisher publish.Publisher, logger *log.Logger) *OverlayTransactionProcessor {
+func NewOverlayTransactionProcessor(engine *engine.Engine, publisher pubsub.PubSub, logger *log.Logger) *OverlayTransactionProcessor {
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -97,7 +97,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager creates a new queue manager
-func NewQueueManager(engine *engine.Engine, publisher publish.Publisher, logger *log.Logger) (*QueueManager, error) {
+func NewQueueManager(engine *engine.Engine, publisher pubsub.PubSub, logger *log.Logger) (*QueueManager, error) {
 	if logger == nil {
 		logger = log.Default()
 	}

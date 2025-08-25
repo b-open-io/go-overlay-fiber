@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"os"
 
 	"github.com/bsv-blockchain/go-overlay-fiber/pkg/server"
@@ -21,6 +22,8 @@ func main() {
 		// Provide the HTTPS URL where your node is available on the internet
 		os.Getenv("HOSTING_URL"),
 	)
+
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	// Decide what port you want the server to listen on.
 	overlayServer.ConfigurePort(8080)

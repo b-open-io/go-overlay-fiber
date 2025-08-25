@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/b-open-io/overlay/publish"
+	"github.com/b-open-io/overlay/pubsub"
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 )
@@ -39,7 +39,7 @@ type SubscriptionRequest struct {
 type WebSocketManager struct {
 	clients     map[string]*WebSocketClient
 	clientMutex sync.RWMutex
-	publisher   publish.Publisher
+	publisher   pubsub.PubSub
 	logger      *log.Logger
 
 	// Context and cancellation for background services
@@ -51,7 +51,7 @@ type WebSocketManager struct {
 }
 
 // NewWebSocketManager creates a new WebSocket manager
-func NewWebSocketManager(publisher publish.Publisher, logger *log.Logger) (*WebSocketManager, error) {
+func NewWebSocketManager(publisher pubsub.PubSub, logger *log.Logger) (*WebSocketManager, error) {
 	if logger == nil {
 		logger = log.Default()
 	}

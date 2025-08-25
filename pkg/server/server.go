@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/b-open-io/overlay/publish"
+	"github.com/b-open-io/overlay/pubsub"
 	"github.com/b-open-io/overlay/storage"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/advertiser"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/ship"
@@ -348,7 +348,11 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 
 	// Auto-configure SHIP/SLAP services if requested
 	if autoConfigureShipSlap {
-		s.autoConfigureDiscoveryServices()
+		s.Engine.SyncConfiguration = make(map[string]engine.SyncConfiguration)
+		s.Engine.SyncConfiguration["tm_ship"] = engine.SyncConfiguration{
+			Peers: []string{"https://overlay-us-1.bsvb.tech"},
+		}
+		//s.autoConfigureDiscoveryServices()
 	}
 
 	s.Logger.Printf("Engine configured with hosting URL: %s, storage: SQL, managers: %d, services: %d",
@@ -421,7 +425,8 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 		if _, exists := s.Managers["tm_ship"]; exists {
 			if _, syncExists := s.Engine.SyncConfiguration["tm_ship"]; !syncExists {
 				s.Engine.SyncConfiguration["tm_ship"] = engine.SyncConfiguration{
-					Type: engine.SyncConfigurationSHIP,
+					Type:        engine.SyncConfigurationSHIP,
+					Concurrency: 1,
 				}
 				s.Logger.Printf("Auto-configured SHIP sync for tm_ship topic manager")
 			}
@@ -431,7 +436,8 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 		if _, exists := s.Managers["tm_slap"]; exists {
 			if _, syncExists := s.Engine.SyncConfiguration["tm_slap"]; !syncExists {
 				s.Engine.SyncConfiguration["tm_slap"] = engine.SyncConfiguration{
-					Type: engine.SyncConfigurationSHIP,
+					Type:        engine.SyncConfigurationSHIP,
+					Concurrency: 1,
 				}
 				s.Logger.Printf("Auto-configured SHIP sync for tm_slap topic manager")
 			}
@@ -460,7 +466,7 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 func (s *OverlayServer) initializeBackgroundServices() error {
 	// TODO: Add publisher to OverlayServer and get from there
 	// Get publisher from overlay storage adapter
-	var publisher publish.Publisher
+	var publisher pubsub.PubSub
 	if overlayAdapter, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
 		publisher = overlayAdapter.GetPublisher()
 	}

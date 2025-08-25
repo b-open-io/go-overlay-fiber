@@ -4,12 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/b-open-io/overlay/config"
 	"log"
 	"net/url"
 	"strings"
 
 	"github.com/b-open-io/overlay/beef"
-	"github.com/b-open-io/overlay/publish"
+	"github.com/b-open-io/overlay/pubsub"
 	"github.com/b-open-io/overlay/storage"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
@@ -38,17 +39,8 @@ func CreateOverlayStorage(eventStorageURL, beefStorageURL string) (engine.Storag
 func CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL string, db *sql.DB) (engine.Storage, error) {
 	logger := log.Default()
 
-	// Create BEEF storage using overlay factory
-	beefStorage, err := beef.CreateBeefStorage(beefStorageURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create BEEF storage: %w", err)
-	}
-
-	// Create no-op publisher
-	publisher := &NoOpPublisher{}
-
 	// Create event data storage using overlay factory
-	overlayStorage, err := storage.CreateEventDataStorage(eventStorageURL, beefStorage, publisher)
+	overlayStorage, err := config.CreateEventStorage(eventStorageURL, beefStorageURL, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create overlay storage from URL '%s': %w", eventStorageURL, err)
 	}
@@ -69,7 +61,27 @@ func CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL string, db *sql.
 // NoOpPublisher implements overlay's publish.Publisher interface with no-op behavior
 type NoOpPublisher struct{}
 
-func (p *NoOpPublisher) Publish(ctx context.Context, topic string, data string) error {
+func (p *NoOpPublisher) Subscribe(ctx context.Context, topics []string) (<-chan pubsub.Event, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (p *NoOpPublisher) Unsubscribe(topics []string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (p *NoOpPublisher) Stop() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (p *NoOpPublisher) Close() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (p *NoOpPublisher) Publish(ctx context.Context, topic string, data string, score ...float64) error {
 	// No-op implementation
 	_ = ctx
 	_ = topic
@@ -107,8 +119,8 @@ func (o *OverlayStorageAdapter) GetBeefStorage() beef.BeefStorage {
 }
 
 // GetPublisher returns the publisher instance
-func (o *OverlayStorageAdapter) GetPublisher() publish.Publisher {
-	return o.overlayStorage.GetPublisher()
+func (o *OverlayStorageAdapter) GetPublisher() pubsub.PubSub {
+	return o.overlayStorage.GetPubSub()
 }
 
 // Implement engine.Storage interface by delegating to overlayStorage
@@ -173,8 +185,8 @@ func (o *OverlayStorageAdapter) GetTransactionsByTopicAndHeight(ctx context.Cont
 	return o.overlayStorage.GetTransactionsByTopicAndHeight(ctx, topic, height)
 }
 
-func (o *OverlayStorageAdapter) SaveEvents(ctx context.Context, outpoint *transaction.Outpoint, events []string, height uint32, idx uint64, data interface{}) error {
-	return o.overlayStorage.SaveEvents(ctx, outpoint, events, height, idx, data)
+func (o *OverlayStorageAdapter) SaveEvents(ctx context.Context, outpoint *transaction.Outpoint, events []string, topic string, height uint32, idx uint64, data interface{}) error {
+	return o.overlayStorage.SaveEvents(ctx, outpoint, events, topic, height, idx, data)
 }
 
 func (o *OverlayStorageAdapter) FindEvents(ctx context.Context, outpoint *transaction.Outpoint) ([]string, error) {
