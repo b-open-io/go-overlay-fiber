@@ -353,7 +353,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 			Type:  engine.SyncConfigurationSHIP,
 			Peers: []string{"https://overlay-us-1.bsvb.tech"},
 		}
-		//s.autoConfigureDiscoveryServices()
+		s.autoConfigureDiscoveryServices()
 	}
 
 	s.Logger.Printf("Engine configured with hosting URL: %s, storage: SQL, managers: %d, services: %d",
