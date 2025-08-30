@@ -350,6 +350,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	if autoConfigureShipSlap {
 		s.Engine.SyncConfiguration = make(map[string]engine.SyncConfiguration)
 		s.Engine.SyncConfiguration["tm_ship"] = engine.SyncConfiguration{
+			Type:  engine.SyncConfigurationSHIP,
 			Peers: []string{"https://overlay-us-1.bsvb.tech"},
 		}
 		//s.autoConfigureDiscoveryServices()
@@ -625,7 +626,7 @@ func (s *OverlayServer) handleWebUI(c *fiber.Ctx) error {
 			engineStatus = "configured_with_storage"
 
 			// Try to determine storage type
-			if _, ok := s.Engine.Storage.(storage.EventDataStorage); ok {
+			if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
 				storageType = "overlay_storage"
 			} else {
 				storageType = "basic_storage"
@@ -1231,7 +1232,7 @@ func (s *OverlayServer) handleLookup(c *fiber.Ctx) error {
 	}
 
 	// Type assert storage to EventDataStorage interface
-	eventDataStorage, ok := s.Engine.Storage.(storage.EventDataStorage)
+	eventDataStorage, ok := s.Engine.Storage.(*OverlayStorageAdapter)
 	if !ok {
 		return c.Status(500).JSON(ErrorResponse{
 			Status:  "error",

@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/hex"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"io"
 	"net/http/httptest"
 	"testing"
@@ -188,7 +189,7 @@ func TestHandleSubmitEngineIntegration(t *testing.T) {
 
 func createTestServerWithEngine(t *testing.T) *OverlayServer {
 	// Create server with basic configuration
-	server := NewOverlayServer("test-server", "test-private-key", "localhost:3000")
+	server := NewOverlayServer("test-server", "test-private-key", "http://localhost:3000")
 
 	// Configure with in-memory SQLite database
 	server.ConfigureDatabase("sqlite3", ":memory:")
@@ -275,7 +276,8 @@ func TestGASPSyncConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create server with GASP sync configuration
-			server := NewOverlayServer("test-server", "test-private-key", "localhost:3000")
+			testPrivateKey, _ := ec.NewPrivateKey()
+			server := NewOverlayServer("test-server", testPrivateKey.Hex(), "https://your-domain.com")
 			server.ConfigureGASPSync(tt.enableGASPSync)
 			server.ConfigureDatabase("sqlite3", ":memory:")
 

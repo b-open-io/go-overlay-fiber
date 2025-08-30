@@ -35,7 +35,7 @@ func TestOverlayIntegration(t *testing.T) {
 	t.Logf("✅ Publisher created and tested successfully: %T", publisher)
 
 	// Test storage factory (this might fail due to no connection string, which is expected)
-	_, err = storage.CreateEventDataStorage("", beefStorage, publisher)
+	_, err = storage.CreateEventDataStorage("", beefStorage, nil, publisher)
 	// We expect this to fail for empty connection string, but we want to test the factory exists
 	if err != nil {
 		t.Logf("✅ Storage factory exists and handles empty connection string properly: %v", err)

@@ -46,7 +46,7 @@ func CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL string, db *sql.
 	}
 
 	adapter := &OverlayStorageAdapter{
-		overlayStorage:  overlayStorage,
+		overlayStorage:  *overlayStorage,
 		eventStorageURL: eventStorageURL,
 		beefStorageURL:  beefStorageURL,
 		logger:          logger,
@@ -185,18 +185,18 @@ func (o *OverlayStorageAdapter) GetTransactionsByTopicAndHeight(ctx context.Cont
 	return o.overlayStorage.GetTransactionsByTopicAndHeight(ctx, topic, height)
 }
 
-func (o *OverlayStorageAdapter) SaveEvents(ctx context.Context, outpoint *transaction.Outpoint, events []string, topic string, height uint32, idx uint64, data interface{}) error {
-	return o.overlayStorage.SaveEvents(ctx, outpoint, events, topic, height, idx, data)
+func (o *OverlayStorageAdapter) SaveEvents(ctx context.Context, outpoint *transaction.Outpoint, events []string, topic string, score float64, data interface{}) error {
+	return o.overlayStorage.SaveEvents(ctx, outpoint, events, topic, score, data)
 }
 
-func (o *OverlayStorageAdapter) FindEvents(ctx context.Context, outpoint *transaction.Outpoint) ([]string, error) {
-	return o.overlayStorage.FindEvents(ctx, outpoint)
+func (o *OverlayStorageAdapter) FindEvents(ctx context.Context, outpoint *transaction.Outpoint, topic string) ([]string, error) {
+	return o.overlayStorage.FindEvents(ctx, outpoint, topic)
 }
 
 func (o *OverlayStorageAdapter) LookupOutpoints(ctx context.Context, question *storage.EventQuestion, includeData ...bool) ([]*storage.OutpointResult, error) {
 	return o.overlayStorage.LookupOutpoints(ctx, question, includeData...)
 }
 
-func (o *OverlayStorageAdapter) GetOutputData(ctx context.Context, outpoint *transaction.Outpoint) (interface{}, error) {
-	return o.overlayStorage.GetOutputData(ctx, outpoint)
+func (o *OverlayStorageAdapter) GetOutputData(ctx context.Context, outpoint *transaction.Outpoint, topic string) (interface{}, error) {
+	return o.overlayStorage.GetOutputData(ctx, outpoint, topic)
 }
