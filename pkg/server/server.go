@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/b-open-io/overlay/config"
 	"log"
 	"os"
 	"strings"
@@ -259,11 +260,8 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	eventStorageURL := os.Getenv("EVENT_STORAGE")
 	beefStorageURL := os.Getenv("BEEF_STORAGE")
 
-	var storage engine.Storage
-	var err error
-
 	// Use overlay storage with database connection
-	storage, err = CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL, s.DB)
+	eventStorage, err := config.CreateEventStorage(eventStorageURL, beefStorageURL, "", "")
 	if err != nil {
 		s.Logger.Printf("Failed to create overlay storage: %v", err)
 		return s
@@ -317,7 +315,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		HostingURL:           s.AdvertisableFQDN,
 		Managers:             make(map[string]engine.TopicManager),
 		LookupServices:       make(map[string]engine.LookupService),
-		Storage:              storage,
+		Storage:              eventStorage,
 		LogPrefix:            s.Name,
 		ChainTracker:         s.ChainTracker,
 		Broadcaster:          s.EngineConfig.Broadcaster,
@@ -468,8 +466,8 @@ func (s *OverlayServer) initializeBackgroundServices() error {
 	// TODO: Add publisher to OverlayServer and get from there
 	// Get publisher from overlay storage adapter
 	var publisher pubsub.PubSub
-	if overlayAdapter, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
-		publisher = overlayAdapter.GetPublisher()
+	if overlayAdapter, ok := s.Engine.Storage.(*storage.EventDataStorage); ok {
+		publisher = overlayAdapter.GetPubSub()
 	}
 
 	// Initialize queue manager
@@ -626,7 +624,7 @@ func (s *OverlayServer) handleWebUI(c *fiber.Ctx) error {
 			engineStatus = "configured_with_storage"
 
 			// Try to determine storage type
-			if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+			if _, ok := s.Engine.Storage.(*storage.EventDataStorage); ok {
 				storageType = "overlay_storage"
 			} else {
 				storageType = "basic_storage"
@@ -765,7 +763,7 @@ func (s *OverlayServer) collectDashboardData() *DashboardData {
 
 		// Storage information
 		if s.Engine.Storage != nil {
-			if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+			if _, ok := s.Engine.Storage.(*storage.EventDataStorage); ok {
 				data.StorageType = "overlay_storage"
 				data.StorageStatus = "active"
 				data.StorageConfig = map[string]interface{}{
@@ -793,7 +791,7 @@ func (s *OverlayServer) handleDynamicInterface(c *fiber.Ctx) error {
 	// Determine storage info
 	storageInfo := "Unknown"
 	if s.Engine != nil && s.Engine.Storage != nil {
-		if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+		if _, ok := s.Engine.Storage.(*storage.EventDataStorage); ok {
 			storageInfo = "Overlay Storage"
 		} else {
 			storageInfo = "Basic Storage"
@@ -1232,7 +1230,7 @@ func (s *OverlayServer) handleLookup(c *fiber.Ctx) error {
 	}
 
 	// Type assert storage to EventDataStorage interface
-	eventDataStorage, ok := s.Engine.Storage.(*OverlayStorageAdapter)
+	eventDataStorage, ok := s.Engine.Storage.(*storage.EventDataStorage)
 	if !ok {
 		return c.Status(500).JSON(ErrorResponse{
 			Status:  "error",
