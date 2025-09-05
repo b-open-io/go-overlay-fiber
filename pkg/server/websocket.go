@@ -139,7 +139,7 @@ func (wm *WebSocketManager) handleWebSocketConnection(c *websocket.Conn) {
 	wm.clients[clientID] = client
 	wm.clientMutex.Unlock()
 
-	wm.logger.Info("WebSocket client connected: %s", clientID)
+	wm.logger.Info("WebSocket client connected", "clientID", clientID)
 
 	// Send welcome message
 	welcomeMsg := WebSocketMessage{
@@ -156,7 +156,7 @@ func (wm *WebSocketManager) handleWebSocketConnection(c *websocket.Conn) {
 		wm.clientMutex.Lock()
 		delete(wm.clients, clientID)
 		wm.clientMutex.Unlock()
-		wm.logger.Info("WebSocket client disconnected: %s", clientID)
+		wm.logger.Info("WebSocket client disconnected", "clientID", clientID)
 	}()
 
 	for {
@@ -164,7 +164,7 @@ func (wm *WebSocketManager) handleWebSocketConnection(c *websocket.Conn) {
 		err := c.ReadJSON(&msg)
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				wm.logger.Error("WebSocket client %s error: %v", clientID, err)
+				wm.logger.Error("WebSocket client error", "clientID", clientID, "error", err)
 			}
 			break
 		}
@@ -188,7 +188,7 @@ func (wm *WebSocketManager) handleSubscriptionRequest(client *WebSocketClient, r
 	case "subscribe":
 		for _, topic := range request.Topics {
 			client.Topics[topic] = true
-			wm.logger.Info("Client %s subscribed to topic: %s", client.ID, topic)
+			wm.logger.Info("Client subscribed to topic", "clientID", client.ID, "topic", topic)
 		}
 
 		// Send confirmation
@@ -203,7 +203,7 @@ func (wm *WebSocketManager) handleSubscriptionRequest(client *WebSocketClient, r
 	case "unsubscribe":
 		for _, topic := range request.Topics {
 			delete(client.Topics, topic)
-			wm.logger.Info("Client %s unsubscribed from topic: %s", client.ID, topic)
+			wm.logger.Info("Client unsubscribed from topic", "clientID", client.ID, "topic", topic)
 		}
 
 		// Send confirmation
@@ -255,7 +255,7 @@ func (wm *WebSocketManager) BroadcastToTopic(topic string, message WebSocketMess
 	}
 
 	if count > 0 {
-		wm.logger.Info("Broadcasted message to %d clients on topic: %s", count, topic)
+		wm.logger.Info("Broadcasted message to clients on topic", "count", count, "topic", topic)
 	}
 }
 
@@ -268,13 +268,13 @@ func (wm *WebSocketManager) BroadcastToAll(message WebSocketMessage) {
 		wm.sendToClient(client, message)
 	}
 
-	wm.logger.Info("Broadcasted message to %d clients", len(wm.clients))
+	wm.logger.Info("Broadcasted message to clients", "count", len(wm.clients))
 }
 
 // sendToClient sends a message to a specific client
 func (wm *WebSocketManager) sendToClient(client *WebSocketClient, message WebSocketMessage) {
 	if err := client.Conn.WriteJSON(message); err != nil {
-		wm.logger.Error("Error sending message to client %s: %v", client.ID, err)
+		wm.logger.Error("Error sending message to client", "clientID", client.ID, "error", err)
 		// Client will be cleaned up by the connection handler
 	}
 }
@@ -309,7 +309,7 @@ func (wm *WebSocketManager) cleanupInactiveClients() {
 		if inactive {
 			_ = client.Conn.Close()
 			delete(wm.clients, id)
-			wm.logger.Info("Cleaned up inactive client: %s", id)
+			wm.logger.Info("Cleaned up inactive client", "clientID", id)
 		}
 	}
 }

@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -17,7 +17,7 @@ func TestQueueManagerCreation(t *testing.T) {
 	eng := &engine.Engine{}
 
 	// Create queue manager
-	qm, err := NewQueueManager(eng, &NoOpPublisher{}, log.Default())
+	qm, err := NewQueueManager(eng, &NoOpPublisher{}, slog.Default())
 
 	// Should not fail
 	assert.NoError(t, err)
@@ -32,7 +32,7 @@ func TestQueueManagerCreation(t *testing.T) {
 
 func TestWebSocketManagerCreation(t *testing.T) {
 	// Create WebSocket manager
-	wm, err := NewWebSocketManager(&NoOpPublisher{}, log.Default())
+	wm, err := NewWebSocketManager(&NoOpPublisher{}, slog.Default())
 
 	// Should not fail
 	assert.NoError(t, err)
@@ -51,7 +51,7 @@ func TestTransactionProcessor(t *testing.T) {
 	eng := &engine.Engine{}
 
 	// Create transaction processor
-	processor := NewOverlayTransactionProcessor(eng, &NoOpPublisher{}, log.Default())
+	processor := NewOverlayTransactionProcessor(eng, &NoOpPublisher{}, slog.Default())
 	assert.NotNil(t, processor)
 
 	// Test processing a transaction with no storage should return error
@@ -67,11 +67,11 @@ func TestTransactionProcessor(t *testing.T) {
 func TestBackgroundServicesLifecycle(t *testing.T) {
 	// Create queue manager
 	eng := &engine.Engine{}
-	qm, err := NewQueueManager(eng, &NoOpPublisher{}, log.Default())
+	qm, err := NewQueueManager(eng, &NoOpPublisher{}, slog.Default())
 	require.NoError(t, err)
 
 	// Create WebSocket manager
-	wm, err := NewWebSocketManager(&NoOpPublisher{}, log.Default())
+	wm, err := NewWebSocketManager(&NoOpPublisher{}, slog.Default())
 	require.NoError(t, err)
 
 	// Start services

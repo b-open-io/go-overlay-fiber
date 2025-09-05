@@ -35,7 +35,7 @@ func NewOverlayTransactionProcessor(engine *engine.Engine, publisher pubsub.PubS
 // ProcessTransaction processes a single transaction by its ID
 // Returns a list of topics/tokens that this transaction belongs to
 func (p *OverlayTransactionProcessor) ProcessTransaction(ctx context.Context, txid *chainhash.Hash) ([]string, error) {
-	p.logger.Info("Processing transaction %s", txid.String())
+	p.logger.Info("Processing transaction", "txid", txid.String())
 
 	// Try to find outputs for this transaction in the engine storage
 	if p.engine == nil || p.engine.Storage == nil {
@@ -49,7 +49,7 @@ func (p *OverlayTransactionProcessor) ProcessTransaction(ctx context.Context, tx
 	}
 
 	if len(outputs) == 0 {
-		p.logger.Warn("No outputs found for transaction %s", txid.String())
+		p.logger.Warn("No outputs found for transaction", "txid", txid.String())
 		return []string{}, nil
 	}
 
@@ -74,17 +74,17 @@ func (p *OverlayTransactionProcessor) ProcessTransaction(ctx context.Context, tx
 
 		for _, topic := range topics {
 			if err := p.publisher.Publish(ctx, fmt.Sprintf("tx_processed:%s", topic), eventData); err != nil {
-				p.logger.Error("Failed to publish processing event for topic %s: %v", topic, err)
+				p.logger.Error("Failed to publish processing event for topic", "topic", topic, "error", err)
 			}
 		}
 
 		// Also publish to global processing channel
 		if err := p.publisher.Publish(ctx, "tx_processed:all", eventData); err != nil {
-			p.logger.Error("Failed to publish to global processing channel: %v", err)
+			p.logger.Error("Failed to publish to global processing channel", "error", err)
 		}
 	}
 
-	p.logger.Info("Successfully processed transaction %s for topics: %v", txid.String(), topics)
+	p.logger.Info("Successfully processed transaction %s for topics", "txid", txid.String(), "topics", topics)
 	return topics, nil
 }
 
@@ -150,7 +150,6 @@ func (qm *QueueManager) GetStatus() map[string]interface{} {
 
 // EnqueueTransaction adds a transaction to the processing queue
 func (qm *QueueManager) EnqueueTransaction(txid *chainhash.Hash, blockHeight uint32, blockIndex uint64) error {
-	qm.logger.Info("Transaction %s would be enqueued (height: %d, index: %d)",
-		txid.String(), blockHeight, blockIndex)
+	qm.logger.Info("Transaction would be enqueued", "txid", txid.String(), "height", blockHeight, "index", blockIndex)
 	return nil
 }
