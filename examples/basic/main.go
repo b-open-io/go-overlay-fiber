@@ -45,7 +45,7 @@ func main() {
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)
 
-	// Configure the engine with auto-configuration for SHIP/SLAP services (like overlay-express)
+	// Configure the engine with auto-configuration for SHIP/SLAP services
 	overlayServer.ConfigureEngine(true)
 
 	// Lastly, start the server!

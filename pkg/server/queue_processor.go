@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/b-open-io/overlay/pubsub"
@@ -16,13 +16,13 @@ import (
 type OverlayTransactionProcessor struct {
 	engine    *engine.Engine
 	publisher pubsub.PubSub
-	logger    *log.Logger
+	logger    *slog.Logger
 }
 
 // NewOverlayTransactionProcessor creates a new transaction processor
-func NewOverlayTransactionProcessor(engine *engine.Engine, publisher pubsub.PubSub, logger *log.Logger) *OverlayTransactionProcessor {
+func NewOverlayTransactionProcessor(engine *engine.Engine, publisher pubsub.PubSub, logger *slog.Logger) *OverlayTransactionProcessor {
 	if logger == nil {
-		logger = log.Default()
+		logger = slog.Default()
 	}
 
 	return &OverlayTransactionProcessor{
@@ -35,7 +35,7 @@ func NewOverlayTransactionProcessor(engine *engine.Engine, publisher pubsub.PubS
 // ProcessTransaction processes a single transaction by its ID
 // Returns a list of topics/tokens that this transaction belongs to
 func (p *OverlayTransactionProcessor) ProcessTransaction(ctx context.Context, txid *chainhash.Hash) ([]string, error) {
-	p.logger.Printf("Processing transaction %s", txid.String())
+	p.logger.Info("Processing transaction %s", txid.String())
 
 	// Try to find outputs for this transaction in the engine storage
 	if p.engine == nil || p.engine.Storage == nil {
@@ -49,7 +49,7 @@ func (p *OverlayTransactionProcessor) ProcessTransaction(ctx context.Context, tx
 	}
 
 	if len(outputs) == 0 {
-		p.logger.Printf("No outputs found for transaction %s", txid.String())
+		p.logger.Warn("No outputs found for transaction %s", txid.String())
 		return []string{}, nil
 	}
 
@@ -74,35 +74,35 @@ func (p *OverlayTransactionProcessor) ProcessTransaction(ctx context.Context, tx
 
 		for _, topic := range topics {
 			if err := p.publisher.Publish(ctx, fmt.Sprintf("tx_processed:%s", topic), eventData); err != nil {
-				p.logger.Printf("Failed to publish processing event for topic %s: %v", topic, err)
+				p.logger.Error("Failed to publish processing event for topic %s: %v", topic, err)
 			}
 		}
 
 		// Also publish to global processing channel
 		if err := p.publisher.Publish(ctx, "tx_processed:all", eventData); err != nil {
-			p.logger.Printf("Failed to publish to global processing channel: %v", err)
+			p.logger.Error("Failed to publish to global processing channel: %v", err)
 		}
 	}
 
-	p.logger.Printf("Successfully processed transaction %s for topics: %v", txid.String(), topics)
+	p.logger.Info("Successfully processed transaction %s for topics: %v", txid.String(), topics)
 	return topics, nil
 }
 
 // QueueManager manages background services
 type QueueManager struct {
-	logger *log.Logger
+	logger *slog.Logger
 
 	// Status tracking
 	running bool
 }
 
 // NewQueueManager creates a new queue manager
-func NewQueueManager(engine *engine.Engine, publisher pubsub.PubSub, logger *log.Logger) (*QueueManager, error) {
+func NewQueueManager(engine *engine.Engine, publisher pubsub.PubSub, logger *slog.Logger) (*QueueManager, error) {
 	if logger == nil {
-		logger = log.Default()
+		logger = slog.Default()
 	}
 
-	logger.Printf("Queue manager created")
+	logger.Info("Queue manager created")
 
 	return &QueueManager{
 		logger:  logger,
@@ -116,7 +116,7 @@ func (qm *QueueManager) Start() error {
 		return fmt.Errorf("queue manager is already running")
 	}
 
-	qm.logger.Printf("Queue manager started")
+	qm.logger.Info("Queue manager started")
 	qm.running = true
 	return nil
 }
@@ -127,7 +127,7 @@ func (qm *QueueManager) Stop() error {
 		return nil
 	}
 
-	qm.logger.Printf("Queue manager stopped")
+	qm.logger.Info("Queue manager stopped")
 	qm.running = false
 	return nil
 }
@@ -150,7 +150,7 @@ func (qm *QueueManager) GetStatus() map[string]interface{} {
 
 // EnqueueTransaction adds a transaction to the processing queue
 func (qm *QueueManager) EnqueueTransaction(txid *chainhash.Hash, blockHeight uint32, blockIndex uint64) error {
-	qm.logger.Printf("Transaction %s would be enqueued (height: %d, index: %d)",
+	qm.logger.Info("Transaction %s would be enqueued (height: %d, index: %d)",
 		txid.String(), blockHeight, blockIndex)
 	return nil
 }
