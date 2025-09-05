@@ -138,7 +138,7 @@ func (s *OverlayServer) ConfigureDatabase(driverName, connectionString string) *
 	// Open database connection
 	db, err := sql.Open(driverName, connectionString)
 	if err != nil {
-		s.Logger.Error("Failed to open SQL database connection: %v", err)
+		s.Logger.Error(fmt.Sprintf("Failed to open SQL database connection: %v", err))
 		return s
 	}
 
@@ -149,7 +149,7 @@ func (s *OverlayServer) ConfigureDatabase(driverName, connectionString string) *
 	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	s.DB = db
-	s.Logger.Info("SQL database configured: %s (driver: %s)", connectionString, driverName)
+	s.Logger.Info(fmt.Sprintf("SQL database configured: %s (driver: %s)", connectionString, driverName))
 	return s
 }
 
@@ -176,13 +176,13 @@ func (s *OverlayServer) ConfigureMongoDBWithDatabase(connectionString, database 
 	ctx := context.Background()
 	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
-		s.Logger.Error("Failed to create MongoDB client: %v", err)
+		s.Logger.Error(fmt.Sprintf("Failed to create MongoDB client: %v", err))
 		return s
 	}
 
 	// Get database reference - ready for use by engine/services
 	s.MongoDB = client.Database(database)
-	s.Logger.Info("MongoDB configured: %s (database: %s)", connectionString, database)
+	s.Logger.Info(fmt.Sprintf("MongoDB configured: %s (database: %s)", connectionString, database))
 	return s
 }
 
@@ -213,14 +213,14 @@ func (s *OverlayServer) ConfigureARCAPIKey(key string) *OverlayServer {
 // ConfigureTopicManager stores a topic manager with the given name
 func (s *OverlayServer) ConfigureTopicManager(name string, manager engine.TopicManager) *OverlayServer {
 	s.Managers[name] = manager
-	s.Logger.Info("Topic manager '%s' configured", name)
+	s.Logger.Info(fmt.Sprintf("Topic manager '%s' configured", name))
 	return s
 }
 
 // ConfigureLookupService stores a lookup service with the given name
 func (s *OverlayServer) ConfigureLookupService(name string, service engine.LookupService) *OverlayServer {
 	s.Services[name] = service
-	s.Logger.Info("Lookup service '%s' configured", name)
+	s.Logger.Info(fmt.Sprintf("Lookup service '%s' configured", name))
 	return s
 }
 
@@ -263,10 +263,10 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	// Use overlay storage with database connection
 	eventStorage, err := config.CreateEventStorage(eventStorageURL, beefStorageURL, "", "")
 	if err != nil {
-		s.Logger.Error("Failed to create overlay storage: %v", err)
+		s.Logger.Error(fmt.Sprintf("Failed to create overlay storage: %v", err))
 		return s
 	}
-	s.Logger.Info("Using overlay storage with EVENT_STORAGE=%s, BEEF_STORAGE=%s", eventStorageURL, beefStorageURL)
+	s.Logger.Info(fmt.Sprintf("Using overlay storage with EVENT_STORAGE=%s, BEEF_STORAGE=%s", eventStorageURL, beefStorageURL))
 
 	// Initialize SyncConfiguration if needed for GASP sync
 	syncConfig := s.EngineConfig.SyncConfiguration
@@ -282,7 +282,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		} else {
 			slapTrackers = []string{"https://users.bapp.dev"}
 		}
-		s.Logger.Info("Using default SLAP trackers for network '%s': %v", s.Network, slapTrackers)
+		s.Logger.Info(fmt.Sprintf("Using default SLAP trackers for network '%s': %v", s.Network, slapTrackers))
 	}
 
 	// Prepare advertiser if not set by the user
@@ -303,10 +303,10 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 			nil, // lookupResolverConfig - can be nil for basic functionality
 		)
 		if err != nil {
-			s.Logger.Error("Failed to create WalletAdvertiser for FQDN %s: %v - SHIP and SLAP will be disabled.", s.AdvertisableFQDN, err)
+			s.Logger.Error(fmt.Sprintf("Failed to create WalletAdvertiser for FQDN %s: %v - SHIP and SLAP will be disabled.", s.AdvertisableFQDN, err))
 		} else {
 			adv = walletAdv
-			s.Logger.Info("WalletAdvertiser initialized for FQDN: %s", s.AdvertisableFQDN)
+			s.Logger.Info(fmt.Sprintf("WalletAdvertiser initialized for FQDN: %s", s.AdvertisableFQDN))
 		}
 	}
 
@@ -358,8 +358,8 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 		s.autoConfigureDiscoveryServices()
 	}
 
-	s.Logger.Info("Engine configured with hosting URL: %s, storage: SQL, managers: %d, services: %d",
-		s.AdvertisableFQDN, len(s.Engine.Managers), len(s.Engine.LookupServices))
+	s.Logger.Info(fmt.Sprintf("Engine configured with hosting URL: %s, storage: SQL, managers: %d, services: %d",
+		s.AdvertisableFQDN, len(s.Engine.Managers), len(s.Engine.LookupServices)))
 
 	// Log all configured managers and services
 	s.Logger.Debug("Configured topic managers:")
@@ -373,7 +373,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 
 	// Initialize queue processing and WebSocket management
 	if err := s.initializeBackgroundServices(); err != nil {
-		s.Logger.Error("Failed to initialize background services: %v", err)
+		s.Logger.Error(fmt.Sprintf("Failed to initialize background services: %v", err))
 	}
 
 	return s
@@ -463,13 +463,13 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 		for name, manager := range s.Managers {
 			if _, exists := s.Engine.Managers[name]; !exists {
 				s.Engine.Managers[name] = manager
-				s.Logger.Info("Added topic manager '%s' to engine", name)
+				s.Logger.Info(fmt.Sprintf("Added topic manager '%s' to engine", name))
 			}
 		}
 		for name, service := range s.Services {
 			if _, exists := s.Engine.LookupServices[name]; !exists {
 				s.Engine.LookupServices[name] = service
-				s.Logger.Info("Added lookup service '%s' to engine", name)
+				s.Logger.Info(fmt.Sprintf("Added lookup service '%s' to engine", name))
 			}
 		}
 	}
@@ -1102,7 +1102,7 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 		})
 	}
 
-	s.Logger.Debug("Submit received topics: %v", topics)
+	s.Logger.Debug(fmt.Sprintf("Submit received topics: %v", topics))
 
 	// Check for x-includes-off-chain-values header
 	includesOffChain := c.Get("x-includes-off-chain-values") == "true"
@@ -1187,7 +1187,7 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 			})
 		}
 		// If callback already sent response, just log the error
-		s.Logger.Error("Submit error after callback response: %v", err)
+		s.Logger.Error(fmt.Sprintf("Submit error after callback response: %v", err))
 		return nil
 	}
 
@@ -1195,7 +1195,7 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 	_, _, txid, err := transaction.ParseBeef(beef)
 	if err != nil {
 		// If BEEF parsing fails but engine submission succeeded, log warning but continue
-		s.Logger.Error("BEEF parsing failed after successful submission: %v", err)
+		s.Logger.Error(fmt.Sprintf("BEEF parsing failed after successful submission: %v", err))
 		txid = nil
 	}
 
@@ -1203,7 +1203,7 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 	if s.QueueManager != nil && txid != nil {
 		// Enqueue with default values - in production, these would come from the submission context
 		if err := s.QueueManager.EnqueueTransaction(txid, 0, 0); err != nil {
-			s.Logger.Error("Failed to enqueue transaction for processing: %v", err)
+			s.Logger.Error(fmt.Sprintf("Failed to enqueue transaction for processing: %v", err))
 		}
 	}
 
@@ -1638,7 +1638,7 @@ func (s *OverlayServer) handleEvictOutpoint(c *fiber.Ctx) error {
 		for serviceName, service := range s.Engine.LookupServices {
 			if err := service.OutputEvicted(ctx, outpoint); err != nil {
 				// Log error but continue with other services
-				s.Logger.Error("Failed to evict outpoint from service '%s': %v", serviceName, err)
+				s.Logger.Error(fmt.Sprintf("Failed to evict outpoint from service '%s': %v", serviceName, err))
 			}
 		}
 	}
@@ -1654,19 +1654,19 @@ func (s *OverlayServer) handleEvictOutpoint(c *fiber.Ctx) error {
 func (s *OverlayServer) InitializeDatabases(ctx context.Context) error {
 	// Initialize SQL database if configured
 	if s.DB != nil {
-		s.Logger.Info("Connecting to SQL database...")
+		s.Logger.Log("Connecting to SQL database...")
 		if err := s.DB.PingContext(ctx); err != nil {
-			s.Logger.Error("Failed to connect to SQL database: %v", err)
+			s.Logger.Error(fmt.Sprintf("Failed to connect to SQL database: %v", err))
 			return fmt.Errorf("SQL database connection failed: %w", err)
 		}
-		s.Logger.Info("SQL database connected successfully")
+		s.Logger.Log("SQL database connected successfully")
 	}
 
 	// Initialize MongoDB if configured
 	if s.MongoDB != nil {
 		s.Logger.Info("Connecting to MongoDB...")
 		if err := s.MongoDB.Client().Ping(ctx, nil); err != nil {
-			s.Logger.Error("Failed to ping MongoDB: %v", err)
+			s.Logger.Error(fmt.Sprintf("Failed to ping MongoDB: %v", err))
 			return fmt.Errorf("MongoDB ping failed: %w", err)
 		}
 		s.Logger.Info("MongoDB connected successfully")
@@ -1715,27 +1715,27 @@ func (s *OverlayServer) Start() error {
 		return err
 	}
 
-	s.Logger.Info("Starting %s on port %d (network: %s)", s.Name, s.Port, s.Network)
-	s.Logger.Info("Server FQDN: %s", s.AdvertisableFQDN)
-	s.Logger.Info("GASP Sync: %t", s.EnableGASPSync)
-	s.Logger.Info("Verbose Logging: %t", s.VerboseLogging)
+	s.Logger.Info(fmt.Sprintf("Starting %s on port %d (network: %s)", s.Name, s.Port, s.Network))
+	s.Logger.Info(fmt.Sprintf("Server FQDN: %s", s.AdvertisableFQDN))
+	s.Logger.Info(fmt.Sprintf("GASP Sync: %t", s.EnableGASPSync))
+	s.Logger.Info(fmt.Sprintf("Verbose Logging: %t", s.VerboseLogging))
 
 	// Start background services
 	if s.QueueManager != nil {
 		if err := s.QueueManager.Start(); err != nil {
-			s.Logger.Error("Failed to start queue manager: %v", err)
+			s.Logger.Error(fmt.Sprintf("Failed to start queue manager: %v", err))
 		}
 	}
 
 	if s.WebSocketManager != nil {
 		if err := s.WebSocketManager.Start(); err != nil {
-			s.Logger.Error("Failed to start WebSocket manager: %v", err)
+			s.Logger.Error(fmt.Sprintf("Failed to start WebSocket manager: %v", err))
 		}
 	}
 
 	// Perform initial health check
 	if err := s.CheckDatabaseHealth(ctx); err != nil {
-		s.Logger.Error("Database health check failed: %v", err)
+		s.Logger.Error(fmt.Sprintf("Database health check failed: %v", err))
 	}
 
 	// Automatic startup synchronization
@@ -1743,7 +1743,7 @@ func (s *OverlayServer) Start() error {
 		if s.Engine.Advertiser != nil {
 			if a, ok := s.Engine.Advertiser.(*advertiser.WalletAdvertiser); ok {
 				if err := a.Init(); err != nil {
-					s.Logger.Error("Failed to initialize wallet advertiser: %v", err)
+					s.Logger.Error(fmt.Sprintf("Failed to initialize wallet advertiser: %v", err))
 				} else {
 					s.Logger.Info("Wallet advertiser initialized successfully")
 				}
@@ -1752,19 +1752,19 @@ func (s *OverlayServer) Start() error {
 
 		// Attempt to sync advertisements
 		if err := s.Engine.SyncAdvertisements(ctx); err != nil {
-			s.Logger.Error("Error syncing advertisements: %v", err)
+			s.Logger.Error(fmt.Sprintf("Error syncing advertisements: %v", err))
 		}
 
 		// Attempt to do GASP sync if enabled
 		if s.EnableGASPSync {
 			s.Logger.Info("Starting GASP sync...")
 			if err := s.Engine.StartGASPSync(ctx); err != nil {
-				s.Logger.Error("Failed to GASP sync: %v", err)
+				s.Logger.Error(fmt.Sprintf("Failed to GASP sync: %v", err))
 			} else {
 				s.Logger.Info("GASP sync complete!")
 			}
 		} else {
-			s.Logger.Warn("%s will not sync because GASP has been disabled.", s.Name)
+			s.Logger.Warn(fmt.Sprintf("%s will not sync because GASP has been disabled.", s.Name))
 		}
 	}
 
@@ -1779,26 +1779,26 @@ func (s *OverlayServer) Stop() error {
 	// Stop background services
 	if s.QueueManager != nil {
 		if err := s.QueueManager.Stop(); err != nil {
-			s.Logger.Error("Error stopping queue manager: %v", err)
+			s.Logger.Error(fmt.Sprintf("Error stopping queue manager: %v", err))
 		}
 	}
 
 	if s.WebSocketManager != nil {
 		if err := s.WebSocketManager.Stop(); err != nil {
-			s.Logger.Error("Error stopping WebSocket manager: %v", err)
+			s.Logger.Error(fmt.Sprintf("Error stopping WebSocket manager: %v", err))
 		}
 	}
 
 	// Disconnect from databases
 	if s.DB != nil {
 		if err := s.DB.Close(); err != nil {
-			s.Logger.Error("Error closing SQL database: %v", err)
+			s.Logger.Error(fmt.Sprintf("Error closing SQL database: %v", err))
 		}
 	}
 
 	if s.MongoDB != nil {
 		if err := s.MongoDB.Client().Disconnect(ctx); err != nil {
-			s.Logger.Error("Error disconnecting from MongoDB: %v", err)
+			s.Logger.Error(fmt.Sprintf("Error disconnecting from MongoDB: %v", err))
 		}
 	}
 

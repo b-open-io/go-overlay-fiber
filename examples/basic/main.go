@@ -23,7 +23,7 @@ func main() {
 		os.Getenv("HOSTING_URL"),
 	)
 
-	slog.SetLogLoggerLevel(slog.LevelDebug)
+	slog.SetLogLoggerLevel(slog.LevelInfo)
 
 	// Decide what port you want the server to listen on.
 	overlayServer.ConfigurePort(8080)
