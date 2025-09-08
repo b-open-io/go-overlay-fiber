@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/b-open-io/overlay/config"
+	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"log/slog"
 	"os"
 	"strings"
@@ -270,7 +271,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 
 	// Initialize SyncConfiguration if needed for GASP sync
 	syncConfig := s.EngineConfig.SyncConfiguration
-	if syncConfig == nil && s.EnableGASPSync {
+	if syncConfig == nil {
 		syncConfig = make(map[string]engine.SyncConfiguration)
 	}
 
@@ -278,9 +279,9 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	slapTrackers := s.EngineConfig.SlapTrackers
 	if len(slapTrackers) == 0 {
 		if s.Network == "test" {
-			slapTrackers = []string{"https://testnet-users.bapp.dev"}
+			slapTrackers = lookup.DEFAULT_TESTNET_SLAP_TRACKERS
 		} else {
-			slapTrackers = []string{"https://users.bapp.dev"}
+			slapTrackers = lookup.DEFAULT_SLAP_TRACKERS
 		}
 		s.Logger.Info("Using default SLAP trackers for network", "network", s.Network, "slap-trackers", slapTrackers)
 	}
@@ -350,10 +351,11 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 
 	// Auto-configure SHIP/SLAP services if requested
 	if autoConfigureShipSlap {
-		s.Engine.SyncConfiguration = make(map[string]engine.SyncConfiguration)
-		s.Engine.SyncConfiguration["tm_ship"] = engine.SyncConfiguration{
-			Type:  engine.SyncConfigurationSHIP,
-			Peers: []string{"https://overlay-us-1.bsvb.tech"},
+		if _, ok := s.Engine.SyncConfiguration["tm_ship"]; !ok {
+			s.Engine.SyncConfiguration["tm_ship"] = engine.SyncConfiguration{
+				Type:  engine.SyncConfigurationSHIP,
+				Peers: []string{"https://overlay-us-1.bsvb.tech"},
+			}
 		}
 		s.autoConfigureDiscoveryServices()
 	}
