@@ -5,13 +5,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"github.com/b-open-io/overlay/config"
+	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/b-open-io/overlay/publish"
+	"github.com/b-open-io/overlay/pubsub"
 	"github.com/b-open-io/overlay/storage"
+	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/advertiser"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/ship"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/slap"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
@@ -45,7 +48,7 @@ type OverlayServer struct {
 	Network          string // "main" or "test"
 
 	// Configuration
-	Logger         *log.Logger
+	Logger         *slog.Logger
 	AdminToken     string
 	VerboseLogging bool
 	EnableGASPSync bool
@@ -59,12 +62,11 @@ type OverlayServer struct {
 	Engine *engine.Engine
 
 	// Services
-	Managers        map[string]engine.TopicManager
-	Services        map[string]engine.LookupService
-	ChainTracker    chaintracker.ChainTracker
-	WebUIConfig     UIConfig
-	EngineConfig    EngineConfig
-	MigrationsToRun []Migration
+	Managers     map[string]engine.TopicManager
+	Services     map[string]engine.LookupService
+	ChainTracker chaintracker.ChainTracker
+	WebUIConfig  UIConfig
+	EngineConfig EngineConfig
 
 	// Fiber app
 	App *fiber.App
@@ -88,6 +90,11 @@ func NewOverlayServer(name, privateKey, fqdn string, adminToken ...string) *Over
 		token = uuid.New().String()
 	}
 
+	if !strings.HasSuffix(fqdn, "/") {
+		// Ensure the hosting URL ends with a slash
+		fqdn += "/"
+	}
+
 	return &OverlayServer{
 		Name:             name,
 		PrivateKey:       privateKey,
@@ -95,12 +102,11 @@ func NewOverlayServer(name, privateKey, fqdn string, adminToken ...string) *Over
 		AdminToken:       token,
 		Port:             3000,
 		Network:          "main",
-		Logger:           log.Default(),
+		Logger:           slog.Default(),
 		VerboseLogging:   false,
 		EnableGASPSync:   true,
 		Managers:         make(map[string]engine.TopicManager),
 		Services:         make(map[string]engine.LookupService),
-		MigrationsToRun:  make([]Migration, 0),
 		TemplateManager:  NewTemplateManager(),
 	}
 }
@@ -112,7 +118,7 @@ func (s *OverlayServer) ConfigurePort(port int) *OverlayServer {
 }
 
 // ConfigureLogger sets the server logger
-func (s *OverlayServer) ConfigureLogger(logger *log.Logger) *OverlayServer {
+func (s *OverlayServer) ConfigureLogger(logger *slog.Logger) *OverlayServer {
 	s.Logger = logger
 	return s
 }
@@ -126,14 +132,14 @@ func (s *OverlayServer) ConfigureNetwork(network string) *OverlayServer {
 // ConfigureDatabase establishes SQL database connection
 func (s *OverlayServer) ConfigureDatabase(driverName, connectionString string) *OverlayServer {
 	if connectionString == "" {
-		s.Logger.Printf("No SQL database connection string provided")
+		s.Logger.Warn("No SQL database connection string provided")
 		return s
 	}
 
 	// Open database connection
 	db, err := sql.Open(driverName, connectionString)
 	if err != nil {
-		s.Logger.Printf("Failed to open SQL database connection: %v", err)
+		s.Logger.Error("Failed to open SQL database connection", "error", err)
 		return s
 	}
 
@@ -144,7 +150,7 @@ func (s *OverlayServer) ConfigureDatabase(driverName, connectionString string) *
 	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	s.DB = db
-	s.Logger.Printf("SQL database configured: %s (driver: %s)", connectionString, driverName)
+	s.Logger.Info("SQL database configured", "connection", connectionString, "driver", driverName)
 	return s
 }
 
@@ -156,7 +162,7 @@ func (s *OverlayServer) ConfigureMongoDB(connectionString string) *OverlayServer
 // ConfigureMongoDBWithDatabase establishes MongoDB connection with custom database name
 func (s *OverlayServer) ConfigureMongoDBWithDatabase(connectionString, database string) *OverlayServer {
 	if connectionString == "" {
-		s.Logger.Printf("No MongoDB connection string provided")
+		s.Logger.Error("No MongoDB connection string provided")
 		return s
 	}
 
@@ -171,13 +177,13 @@ func (s *OverlayServer) ConfigureMongoDBWithDatabase(connectionString, database 
 	ctx := context.Background()
 	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
-		s.Logger.Printf("Failed to create MongoDB client: %v", err)
+		s.Logger.Error("Failed to create MongoDB client", "error", err)
 		return s
 	}
 
 	// Get database reference - ready for use by engine/services
 	s.MongoDB = client.Database(database)
-	s.Logger.Printf("MongoDB configured: %s (database: %s)", connectionString, database)
+	s.Logger.Info("MongoDB configured", "connection", connectionString, "database", database)
 	return s
 }
 
@@ -208,62 +214,21 @@ func (s *OverlayServer) ConfigureARCAPIKey(key string) *OverlayServer {
 // ConfigureTopicManager stores a topic manager with the given name
 func (s *OverlayServer) ConfigureTopicManager(name string, manager engine.TopicManager) *OverlayServer {
 	s.Managers[name] = manager
-	s.Logger.Printf("Topic manager '%s' configured", name)
+	s.Logger.Info("Topic manager configured", "name", name)
 	return s
 }
 
 // ConfigureLookupService stores a lookup service with the given name
 func (s *OverlayServer) ConfigureLookupService(name string, service engine.LookupService) *OverlayServer {
 	s.Services[name] = service
-	s.Logger.Printf("Lookup service '%s' configured", name)
-	return s
-}
-
-// ConfigureLookupServiceWithDB creates a lookup service with SQL database and migrations
-func (s *OverlayServer) ConfigureLookupServiceWithDB(name string, factory LookupServiceFactory) *OverlayServer {
-	if s.DB == nil {
-		s.Logger.Printf("Warning: ConfigureLookupServiceWithDB called but no SQL database configured")
-		return s
-	}
-
-	service, migrations, err := factory(s.DB)
-	if err != nil {
-		s.Logger.Printf("Error creating lookup service '%s': %v", name, err)
-		return s
-	}
-
-	s.Services[name] = service
-
-	// Add migrations to the list to be run
-	s.MigrationsToRun = append(s.MigrationsToRun, migrations...)
-
-	s.Logger.Printf("Lookup service '%s' configured with SQL database and %d migrations", name, len(migrations))
-	return s
-}
-
-// ConfigureLookupServiceWithMongo creates a lookup service with MongoDB
-func (s *OverlayServer) ConfigureLookupServiceWithMongo(name string, factory MongoLookupServiceFactory) *OverlayServer {
-	if s.MongoDB == nil {
-		s.Logger.Printf("Warning: ConfigureLookupServiceWithMongo called but no MongoDB configured")
-		return s
-	}
-
-	service, err := factory(s.MongoDB)
-	if err != nil {
-		s.Logger.Printf("Error creating lookup service '%s': %v", name, err)
-		return s
-	}
-
-	s.Services[name] = service
-
-	s.Logger.Printf("Lookup service '%s' configured with MongoDB", name)
+	s.Logger.Info("Lookup service configured", "name", name)
 	return s
 }
 
 // ConfigureChainTracker sets the chain tracker
 func (s *OverlayServer) ConfigureChainTracker(chainTracker chaintracker.ChainTracker) *OverlayServer {
 	s.ChainTracker = chainTracker
-	s.Logger.Printf("Chain tracker configured")
+	s.Logger.Info("Chain tracker configured")
 	return s
 }
 
@@ -288,7 +253,7 @@ func (s *OverlayServer) GetAdminToken() string {
 func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServer {
 	// Don't configure engine if no databases are available
 	if s.DB == nil {
-		s.Logger.Printf("Warning: ConfigureEngine called but no SQL database configured")
+		s.Logger.Warn("ConfigureEngine called but no SQL database configured")
 		return s
 	}
 
@@ -296,28 +261,68 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	eventStorageURL := os.Getenv("EVENT_STORAGE")
 	beefStorageURL := os.Getenv("BEEF_STORAGE")
 
-	var storage engine.Storage
-	var err error
-
 	// Use overlay storage with database connection
-	storage, err = CreateOverlayStorageWithDB(eventStorageURL, beefStorageURL, s.DB)
+	eventStorage, err := config.CreateEventStorage(eventStorageURL, beefStorageURL, "", "")
 	if err != nil {
-		s.Logger.Printf("Failed to create overlay storage: %v", err)
+		s.Logger.Error("Failed to create overlay storage", "error", err)
 		return s
 	}
-	s.Logger.Printf("Using overlay storage with EVENT_STORAGE=%s, BEEF_STORAGE=%s", eventStorageURL, beefStorageURL)
+	s.Logger.Info("Using overlay storage with", "EVENT_STORAGE", eventStorageURL, "BEEF_STORAGE", beefStorageURL)
+
+	// Initialize SyncConfiguration if needed for GASP sync
+	syncConfig := s.EngineConfig.SyncConfiguration
+	if syncConfig == nil {
+		syncConfig = make(map[string]engine.SyncConfiguration)
+	}
+
+	// Set default SLAP trackers if not provided in engine config
+	slapTrackers := s.EngineConfig.SlapTrackers
+	if len(slapTrackers) == 0 {
+		if s.Network == "test" {
+			slapTrackers = lookup.DEFAULT_TESTNET_SLAP_TRACKERS
+		} else {
+			slapTrackers = lookup.DEFAULT_SLAP_TRACKERS
+		}
+		s.Logger.Info("Using default SLAP trackers for network", "network", s.Network, "slap-trackers", slapTrackers)
+	}
+
+	// Prepare advertiser if not set by the user
+	var adv = s.EngineConfig.Advertiser
+	if adv == nil {
+		// Create AuthenticatedWalletAdvertiser for production storage services
+		storageURL := "https://storage.babbage.systems"
+		if s.Network == "test" {
+			storageURL = "https://staging-storage.babbage.systems"
+		}
+
+		// Use WalletAdvertiser from go-overlay-discovery-services
+		walletAdv, err := advertiser.NewWalletAdvertiser(
+			s.Network,
+			s.PrivateKey,
+			storageURL,
+			s.AdvertisableFQDN,
+			nil, // lookupResolverConfig - can be nil for basic functionality
+		)
+		if err != nil {
+			s.Logger.Error("Failed to create WalletAdvertiser for FQDN - SHIP and SLAP will be disabled.", "fqdn", s.AdvertisableFQDN, "error", err)
+		} else {
+			adv = walletAdv
+			s.Logger.Info("WalletAdvertiser initialized for FQDN", "fqdn", s.AdvertisableFQDN)
+		}
+	}
 
 	// Create Engine configuration with real storage
 	engineConfig := engine.Engine{
 		HostingURL:           s.AdvertisableFQDN,
 		Managers:             make(map[string]engine.TopicManager),
 		LookupServices:       make(map[string]engine.LookupService),
-		Storage:              storage,
+		Storage:              eventStorage,
 		LogPrefix:            s.Name,
 		ChainTracker:         s.ChainTracker,
 		Broadcaster:          s.EngineConfig.Broadcaster,
-		Advertiser:           s.EngineConfig.Advertiser,
-		SyncConfiguration:    s.EngineConfig.SyncConfiguration,
+		Advertiser:           adv,
+		SyncConfiguration:    syncConfig,
+		SLAPTrackers:         slapTrackers,
 		BroadcastFacilitator: s.EngineConfig.OverlayBroadcastFacilitator,
 	}
 
@@ -327,6 +332,10 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	}
 	if s.EngineConfig.ThrowOnBroadcastFailure != nil {
 		engineConfig.ErrorOnBroadcastFailure = *s.EngineConfig.ThrowOnBroadcastFailure
+	}
+
+	if engineConfig.ChainTracker == nil {
+		engineConfig.ChainTracker = chaintracker.NewWhatsOnChain(chaintracker.MainNet, "")
 	}
 
 	// Copy configured topic managers and lookup services to engine
@@ -342,15 +351,31 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 
 	// Auto-configure SHIP/SLAP services if requested
 	if autoConfigureShipSlap {
+		if _, ok := s.Engine.SyncConfiguration["tm_ship"]; !ok {
+			s.Engine.SyncConfiguration["tm_ship"] = engine.SyncConfiguration{
+				Type:  engine.SyncConfigurationSHIP,
+				Peers: []string{"https://overlay-us-1.bsvb.tech"},
+			}
+		}
 		s.autoConfigureDiscoveryServices()
 	}
 
-	s.Logger.Printf("Engine configured with hosting URL: %s, storage: SQL, managers: %d, services: %d",
-		s.AdvertisableFQDN, len(s.Engine.Managers), len(s.Engine.LookupServices))
+	s.Logger.Info("Engine configured with storage: SQL", "HostingURL",
+		s.AdvertisableFQDN, "managers", len(s.Engine.Managers), "services", len(s.Engine.LookupServices))
+
+	// Log all configured managers and services
+	s.Logger.Debug("Configured topic managers:")
+	for name, manager := range s.Engine.Managers {
+		s.Logger.Debug("topic manager", "name", name, "manager", manager)
+	}
+	s.Logger.Debug("Configured lookup services:")
+	for name, service := range s.Engine.LookupServices {
+		s.Logger.Debug("lookup service", "name", name, "service", service)
+	}
 
 	// Initialize queue processing and WebSocket management
 	if err := s.initializeBackgroundServices(); err != nil {
-		s.Logger.Printf("Warning: Failed to initialize background services: %v", err)
+		s.Logger.Error("Failed to initialize background services", "error", err)
 	}
 
 	return s
@@ -360,35 +385,35 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	// Auto-configure SHIP topic manager if not already configured
 	if _, exists := s.Managers["tm_ship"]; !exists {
-		var shipStorage ship.SHIPStorageInterface
+		var shipStorage ship.StorageInterface
 		if s.MongoDB != nil {
-			shipStorage = ship.NewSHIPStorage(s.MongoDB)
+			shipStorage = ship.NewStorage(s.MongoDB)
 		}
-		shipManager := ship.NewSHIPTopicManager(shipStorage, nil)
+		shipManager := ship.NewTopicManager(shipStorage, nil)
 		s.ConfigureTopicManager("tm_ship", shipManager)
-		s.Logger.Printf("Auto-configured SHIP topic manager")
+		s.Logger.Info("Auto-configured SHIP topic manager")
 	}
 
 	// Auto-configure SLAP topic manager if not already configured
 	if _, exists := s.Managers["tm_slap"]; !exists {
-		var slapStorage slap.SLAPStorageInterface
+		var slapStorage slap.StorageInterface
 		if s.MongoDB != nil {
-			slapStorage = slap.NewSLAPStorage(s.MongoDB)
+			slapStorage = slap.NewStorage(s.MongoDB)
 		}
-		slapManager := slap.NewSLAPTopicManager(slapStorage, nil)
+		slapManager := slap.NewTopicManager(slapStorage, nil)
 		s.ConfigureTopicManager("tm_slap", slapManager)
-		s.Logger.Printf("Auto-configured SLAP topic manager")
+		s.Logger.Info("Auto-configured SLAP topic manager")
 	}
 
 	// Auto-configure SHIP lookup service with MongoDB if available
 	if s.MongoDB != nil {
 		if _, exists := s.Services["ls_ship"]; !exists {
 			// Create SHIP storage and lookup service
-			shipStorage := ship.NewSHIPStorage(s.MongoDB)
-			shipLookupService := ship.NewSHIPLookupService(shipStorage)
+			shipStorage := ship.NewStorage(s.MongoDB)
+			shipLookupService := ship.NewLookupService(shipStorage)
 
 			s.ConfigureLookupService("ls_ship", shipLookupService)
-			s.Logger.Printf("Auto-configured SHIP lookup service with MongoDB")
+			s.Logger.Info("Auto-configured SHIP lookup service with MongoDB")
 		}
 	}
 
@@ -396,11 +421,41 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 	if s.MongoDB != nil {
 		if _, exists := s.Services["ls_slap"]; !exists {
 			// Create SLAP storage and lookup service
-			slapStorage := slap.NewSLAPStorage(s.MongoDB)
-			slapLookupService := slap.NewSLAPLookupService(slapStorage)
+			slapStorage := slap.NewStorage(s.MongoDB)
+			slapLookupService := slap.NewLookupService(slapStorage)
 
 			s.ConfigureLookupService("ls_slap", slapLookupService)
-			s.Logger.Printf("Auto-configured SLAP lookup service with MongoDB")
+			s.Logger.Info("Auto-configured SLAP lookup service with MongoDB")
+		}
+	}
+
+	// Configure sync configuration when GASP sync is enabled
+	if s.EnableGASPSync && s.Engine != nil {
+		// Initialize SyncConfiguration map if needed
+		if s.Engine.SyncConfiguration == nil {
+			s.Engine.SyncConfiguration = make(map[string]engine.SyncConfiguration)
+		}
+
+		// Configure tm_ship for SHIP discovery sync if it was auto-configured
+		if _, exists := s.Managers["tm_ship"]; exists {
+			if _, syncExists := s.Engine.SyncConfiguration["tm_ship"]; !syncExists {
+				s.Engine.SyncConfiguration["tm_ship"] = engine.SyncConfiguration{
+					Type:        engine.SyncConfigurationSHIP,
+					Concurrency: 1,
+				}
+				s.Logger.Info("Auto-configured SHIP sync for tm_ship topic manager")
+			}
+		}
+
+		// Configure tm_slap for SHIP discovery sync if it was auto-configured
+		if _, exists := s.Managers["tm_slap"]; exists {
+			if _, syncExists := s.Engine.SyncConfiguration["tm_slap"]; !syncExists {
+				s.Engine.SyncConfiguration["tm_slap"] = engine.SyncConfiguration{
+					Type:        engine.SyncConfigurationSHIP,
+					Concurrency: 1,
+				}
+				s.Logger.Info("Auto-configured SHIP sync for tm_slap topic manager")
+			}
 		}
 	}
 
@@ -410,13 +465,13 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 		for name, manager := range s.Managers {
 			if _, exists := s.Engine.Managers[name]; !exists {
 				s.Engine.Managers[name] = manager
-				s.Logger.Printf("Added topic manager '%s' to engine", name)
+				s.Logger.Info("Added topic manager to engine", "name", name)
 			}
 		}
 		for name, service := range s.Services {
 			if _, exists := s.Engine.LookupServices[name]; !exists {
 				s.Engine.LookupServices[name] = service
-				s.Logger.Printf("Added lookup service '%s' to engine", name)
+				s.Logger.Info("Added lookup service to engine", "name", name)
 			}
 		}
 	}
@@ -424,12 +479,11 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 
 // initializeBackgroundServices initializes queue processing and WebSocket management
 func (s *OverlayServer) initializeBackgroundServices() error {
+	// TODO: Add publisher to OverlayServer and get from there
 	// Get publisher from overlay storage adapter
-	var publisher publish.Publisher
-	if overlayAdapter, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
-		publisher = overlayAdapter.GetPublisher()
-	} else if sqlWrapper, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
-		publisher = sqlWrapper.GetPublisher()
+	var publisher pubsub.PubSub
+	if overlayAdapter, ok := s.Engine.Storage.(*storage.EventDataStorage); ok {
+		publisher = overlayAdapter.GetPubSub()
 	}
 
 	// Initialize queue manager
@@ -446,7 +500,7 @@ func (s *OverlayServer) initializeBackgroundServices() error {
 	}
 	s.WebSocketManager = webSocketManager
 
-	s.Logger.Printf("Background services initialized successfully")
+	s.Logger.Info("Background services initialized successfully")
 	return nil
 }
 
@@ -586,7 +640,7 @@ func (s *OverlayServer) handleWebUI(c *fiber.Ctx) error {
 			engineStatus = "configured_with_storage"
 
 			// Try to determine storage type
-			if _, ok := s.Engine.Storage.(storage.EventDataStorage); ok {
+			if _, ok := s.Engine.Storage.(*storage.EventDataStorage); ok {
 				storageType = "overlay_storage"
 			} else {
 				storageType = "basic_storage"
@@ -725,18 +779,12 @@ func (s *OverlayServer) collectDashboardData() *DashboardData {
 
 		// Storage information
 		if s.Engine.Storage != nil {
-			if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+			if _, ok := s.Engine.Storage.(*storage.EventDataStorage); ok {
 				data.StorageType = "overlay_storage"
 				data.StorageStatus = "active"
 				data.StorageConfig = map[string]interface{}{
 					"event_storage": os.Getenv("EVENT_STORAGE"),
 					"beef_storage":  os.Getenv("BEEF_STORAGE"),
-				}
-			} else if _, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
-				data.StorageType = "sql_wrapper"
-				data.StorageStatus = "active"
-				data.StorageConfig = map[string]interface{}{
-					"type": "sql_with_overlay_features",
 				}
 			} else {
 				data.StorageType = "basic_storage"
@@ -759,10 +807,8 @@ func (s *OverlayServer) handleDynamicInterface(c *fiber.Ctx) error {
 	// Determine storage info
 	storageInfo := "Unknown"
 	if s.Engine != nil && s.Engine.Storage != nil {
-		if _, ok := s.Engine.Storage.(*OverlayStorageAdapter); ok {
+		if _, ok := s.Engine.Storage.(*storage.EventDataStorage); ok {
 			storageInfo = "Overlay Storage"
-		} else if _, ok := s.Engine.Storage.(*SQLStorageWrapper); ok {
-			storageInfo = "SQL + Overlay Features"
 		} else {
 			storageInfo = "Basic Storage"
 		}
@@ -1058,6 +1104,8 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 		})
 	}
 
+	s.Logger.Debug("Submit received topics", "topics", topics)
+
 	// Check for x-includes-off-chain-values header
 	includesOffChain := c.Get("x-includes-off-chain-values") == "true"
 
@@ -1110,17 +1158,29 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 		OffChainValues: offChainValues,
 	}
 
+	s.Logger.Debug("TaggedBEEF created with", "topics", topics, "BEEF length", len(beef))
+
 	// Create context
 	ctx := c.Context()
 
 	// Using a callback function, we can return once the STEAK is ready
 	var responseSent bool
+	s.Logger.Debug("Calling s.Engine.Submit with topics", "topics", topics)
 	result, err := s.Engine.Submit(ctx, taggedBEEF, engine.SubmitModeHistorical, func(steak *overlay.Steak) {
+		for topic, instructions := range *steak {
+			if instructions != nil {
+				s.Logger.Debug("Topic instructions", "topic", topic, "OutputsToAdmit", instructions.OutputsToAdmit,
+					"CoinsToRetain", instructions.CoinsToRetain, "CoinsRemoved", instructions.CoinsRemoved)
+			} else {
+				s.Logger.Debug("Topic instructions is nil", "topic", topic)
+			}
+		}
 		if !responseSent {
 			responseSent = true
-			c.JSON(steak)
+			_ = c.JSON(steak)
 		}
 	})
+	s.Logger.Debug("s.Engine.Submit completed", "error", err, "result", result)
 	if err != nil {
 		if !responseSent {
 			return c.Status(500).JSON(ErrorResponse{
@@ -1129,7 +1189,7 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 			})
 		}
 		// If callback already sent response, just log the error
-		s.Logger.Printf("Submit error after callback response: %v", err)
+		s.Logger.Error("Submit error after callback response", "error", err)
 		return nil
 	}
 
@@ -1137,7 +1197,7 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 	_, _, txid, err := transaction.ParseBeef(beef)
 	if err != nil {
 		// If BEEF parsing fails but engine submission succeeded, log warning but continue
-		s.Logger.Printf("Warning: BEEF parsing failed after successful submission: %v", err)
+		s.Logger.Error("BEEF parsing failed after successful submission", "error", err)
 		txid = nil
 	}
 
@@ -1145,7 +1205,7 @@ func (s *OverlayServer) handleSubmit(c *fiber.Ctx) error {
 	if s.QueueManager != nil && txid != nil {
 		// Enqueue with default values - in production, these would come from the submission context
 		if err := s.QueueManager.EnqueueTransaction(txid, 0, 0); err != nil {
-			s.Logger.Printf("Warning: Failed to enqueue transaction for processing: %v", err)
+			s.Logger.Error("Failed to enqueue transaction for processing", "error", err)
 		}
 	}
 
@@ -1200,7 +1260,7 @@ func (s *OverlayServer) handleLookup(c *fiber.Ctx) error {
 	}
 
 	// Type assert storage to EventDataStorage interface
-	eventDataStorage, ok := s.Engine.Storage.(storage.EventDataStorage)
+	eventDataStorage, ok := s.Engine.Storage.(*storage.EventDataStorage)
 	if !ok {
 		return c.Status(500).JSON(ErrorResponse{
 			Status:  "error",
@@ -1580,7 +1640,7 @@ func (s *OverlayServer) handleEvictOutpoint(c *fiber.Ctx) error {
 		for serviceName, service := range s.Engine.LookupServices {
 			if err := service.OutputEvicted(ctx, outpoint); err != nil {
 				// Log error but continue with other services
-				s.Logger.Printf("Warning: Failed to evict outpoint from service '%s': %v", serviceName, err)
+				s.Logger.Error("Failed to evict outpoint from service", "service", serviceName, "error", err)
 			}
 		}
 	}
@@ -1596,33 +1656,22 @@ func (s *OverlayServer) handleEvictOutpoint(c *fiber.Ctx) error {
 func (s *OverlayServer) InitializeDatabases(ctx context.Context) error {
 	// Initialize SQL database if configured
 	if s.DB != nil {
-		s.Logger.Printf("Connecting to SQL database...")
+		s.Logger.Info("Connecting to SQL database...")
 		if err := s.DB.PingContext(ctx); err != nil {
-			s.Logger.Printf("Failed to connect to SQL database: %v", err)
+			s.Logger.Error("Failed to connect to SQL database", "error", err)
 			return fmt.Errorf("SQL database connection failed: %w", err)
 		}
-		s.Logger.Printf("SQL database connected successfully")
-
-		// Run database migrations using storage
-		storage, err := NewSQLStorage(s.DB)
-		if err != nil {
-			s.Logger.Printf("Error creating storage for migrations: %v", err)
-			return fmt.Errorf("failed to create storage for migrations: %w", err)
-		}
-		if err := storage.RunMigrations(ctx, s.MigrationsToRun, s.Logger); err != nil {
-			s.Logger.Printf("Database migration failed: %v", err)
-			return fmt.Errorf("database migration failed: %w", err)
-		}
+		s.Logger.Info("SQL database connected successfully")
 	}
 
 	// Initialize MongoDB if configured
 	if s.MongoDB != nil {
-		s.Logger.Printf("Connecting to MongoDB...")
+		s.Logger.Info("Connecting to MongoDB...")
 		if err := s.MongoDB.Client().Ping(ctx, nil); err != nil {
-			s.Logger.Printf("Failed to ping MongoDB: %v", err)
+			s.Logger.Error("Failed to ping MongoDB", "error", err)
 			return fmt.Errorf("MongoDB ping failed: %w", err)
 		}
-		s.Logger.Printf("MongoDB connected successfully")
+		s.Logger.Info("MongoDB connected successfully")
 	}
 
 	return nil
@@ -1668,27 +1717,56 @@ func (s *OverlayServer) Start() error {
 		return err
 	}
 
-	s.Logger.Printf("Starting %s on port %d (network: %s)", s.Name, s.Port, s.Network)
-	s.Logger.Printf("Server FQDN: %s", s.AdvertisableFQDN)
-	s.Logger.Printf("GASP Sync: %t", s.EnableGASPSync)
-	s.Logger.Printf("Verbose Logging: %t", s.VerboseLogging)
+	s.Logger.Info("Starting Overlay Server", "name", s.Name, "port", s.Port, "network", s.Network)
+	s.Logger.Info("Server Info", "FQDN", s.AdvertisableFQDN,
+		"GASP Sync", s.EnableGASPSync, "Verbose Logging", s.VerboseLogging)
 
 	// Start background services
 	if s.QueueManager != nil {
 		if err := s.QueueManager.Start(); err != nil {
-			s.Logger.Printf("Warning: Failed to start queue manager: %v", err)
+			s.Logger.Error("Failed to start queue manager", "error", err)
 		}
 	}
 
 	if s.WebSocketManager != nil {
 		if err := s.WebSocketManager.Start(); err != nil {
-			s.Logger.Printf("Warning: Failed to start WebSocket manager: %v", err)
+			s.Logger.Error("Failed to start WebSocket manager", "error", err)
 		}
 	}
 
 	// Perform initial health check
 	if err := s.CheckDatabaseHealth(ctx); err != nil {
-		s.Logger.Printf("Warning: Database health check failed: %v", err)
+		s.Logger.Error("Database health check failed", "error", err)
+	}
+
+	// Automatic startup synchronization
+	if s.Engine != nil {
+		if s.Engine.Advertiser != nil {
+			if a, ok := s.Engine.Advertiser.(*advertiser.WalletAdvertiser); ok {
+				if err := a.Init(); err != nil {
+					s.Logger.Error("Failed to initialize wallet advertiser", "error", err)
+				} else {
+					s.Logger.Info("Wallet advertiser initialized successfully")
+				}
+			}
+		}
+
+		// Attempt to sync advertisements
+		if err := s.Engine.SyncAdvertisements(ctx); err != nil {
+			s.Logger.Error("Error syncing advertisements", "error", err)
+		}
+
+		// Attempt to do GASP sync if enabled
+		if s.EnableGASPSync {
+			s.Logger.Info("Starting GASP sync...")
+			if err := s.Engine.StartGASPSync(ctx); err != nil {
+				s.Logger.Error("Failed to GASP sync", "error", err)
+			} else {
+				s.Logger.Info("GASP sync complete!")
+			}
+		} else {
+			s.Logger.Warn("Will not sync because GASP has been disabled", "name", s.Name)
+		}
 	}
 
 	return s.App.Listen(fmt.Sprintf(":%d", s.Port))
@@ -1702,26 +1780,26 @@ func (s *OverlayServer) Stop() error {
 	// Stop background services
 	if s.QueueManager != nil {
 		if err := s.QueueManager.Stop(); err != nil {
-			s.Logger.Printf("Error stopping queue manager: %v", err)
+			s.Logger.Error("Error stopping queue manager", "error", err)
 		}
 	}
 
 	if s.WebSocketManager != nil {
 		if err := s.WebSocketManager.Stop(); err != nil {
-			s.Logger.Printf("Error stopping WebSocket manager: %v", err)
+			s.Logger.Error("Error stopping WebSocket manager", "error", err)
 		}
 	}
 
 	// Disconnect from databases
 	if s.DB != nil {
 		if err := s.DB.Close(); err != nil {
-			s.Logger.Printf("Error closing SQL database: %v", err)
+			s.Logger.Error("Error closing SQL database", "error", err)
 		}
 	}
 
 	if s.MongoDB != nil {
 		if err := s.MongoDB.Client().Disconnect(ctx); err != nil {
-			s.Logger.Printf("Error disconnecting from MongoDB: %v", err)
+			s.Logger.Error("Error disconnecting from MongoDB", "error", err)
 		}
 	}
 

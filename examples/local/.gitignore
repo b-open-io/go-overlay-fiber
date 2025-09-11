@@ -1,0 +1,11 @@
+# Compiled binaries
+basic
+
+# Environment files with secrets
+.env
+
+# Database
+data.db
+
+# Logs
+*.log

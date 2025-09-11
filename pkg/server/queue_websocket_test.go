@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -17,9 +17,9 @@ func TestQueueManagerCreation(t *testing.T) {
 	eng := &engine.Engine{}
 
 	// Create queue manager
-	qm, err := NewQueueManager(eng, &NoOpPublisher{}, log.Default())
+	qm, err := NewQueueManager(eng, &NoOpPublisher{}, slog.Default())
 
-	// Should not fail even if Redis is not available
+	// Should not fail
 	assert.NoError(t, err)
 	assert.NotNil(t, qm)
 
@@ -32,9 +32,9 @@ func TestQueueManagerCreation(t *testing.T) {
 
 func TestWebSocketManagerCreation(t *testing.T) {
 	// Create WebSocket manager
-	wm, err := NewWebSocketManager(&NoOpPublisher{}, log.Default())
+	wm, err := NewWebSocketManager(&NoOpPublisher{}, slog.Default())
 
-	// Should not fail even if Redis is not available
+	// Should not fail
 	assert.NoError(t, err)
 	assert.NotNil(t, wm)
 
@@ -51,7 +51,7 @@ func TestTransactionProcessor(t *testing.T) {
 	eng := &engine.Engine{}
 
 	// Create transaction processor
-	processor := NewOverlayTransactionProcessor(eng, &NoOpPublisher{}, log.Default())
+	processor := NewOverlayTransactionProcessor(eng, &NoOpPublisher{}, slog.Default())
 	assert.NotNil(t, processor)
 
 	// Test processing a transaction with no storage should return error
@@ -67,11 +67,11 @@ func TestTransactionProcessor(t *testing.T) {
 func TestBackgroundServicesLifecycle(t *testing.T) {
 	// Create queue manager
 	eng := &engine.Engine{}
-	qm, err := NewQueueManager(eng, &NoOpPublisher{}, log.Default())
+	qm, err := NewQueueManager(eng, &NoOpPublisher{}, slog.Default())
 	require.NoError(t, err)
 
 	// Create WebSocket manager
-	wm, err := NewWebSocketManager(&NoOpPublisher{}, log.Default())
+	wm, err := NewWebSocketManager(&NoOpPublisher{}, slog.Default())
 	require.NoError(t, err)
 
 	// Start services
@@ -84,11 +84,10 @@ func TestBackgroundServicesLifecycle(t *testing.T) {
 	// Give them a moment to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Check they're running (queue manager may not run if Redis is unavailable)
+	// Check they're running
 	qmStatus := qm.GetStatus()
 	wmStats := wm.GetStats()
 
-	// Queue manager may not be running if Redis is unavailable
 	if qmStatus["available"].(bool) {
 		assert.True(t, qmStatus["running"].(bool))
 	}

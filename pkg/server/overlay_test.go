@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/b-open-io/overlay/beef"
-	"github.com/b-open-io/overlay/publish"
+	"github.com/b-open-io/overlay/pubsub"
 	"github.com/b-open-io/overlay/storage"
 )
 
@@ -35,7 +35,7 @@ func TestOverlayIntegration(t *testing.T) {
 	t.Logf("✅ Publisher created and tested successfully: %T", publisher)
 
 	// Test storage factory (this might fail due to no connection string, which is expected)
-	_, err = storage.CreateEventDataStorage("", beefStorage, publisher)
+	_, err = storage.CreateEventDataStorage("", beefStorage, nil, publisher)
 	// We expect this to fail for empty connection string, but we want to test the factory exists
 	if err != nil {
 		t.Logf("✅ Storage factory exists and handles empty connection string properly: %v", err)
@@ -56,13 +56,7 @@ func TestOverlayStorageCreation(t *testing.T) {
 		t.Fatalf("Failed to create BEEF storage: %v", err)
 	}
 
-	// Test that we can get information about storage type
-	storageType := getStorageType("redis://localhost:6379")
-	if storageType != "Redis" {
-		t.Errorf("Expected Redis, got %s", storageType)
-	}
-
-	storageType = getStorageType("./test.db")
+	storageType := getStorageType("./test.db")
 	if storageType != "SQLite" {
 		t.Errorf("Expected SQLite, got %s", storageType)
 	}
@@ -81,7 +75,7 @@ func TestPublisherInterface(t *testing.T) {
 	publisher := &NoOpPublisher{}
 
 	// Test that it implements the interface properly
-	var _ publish.Publisher = publisher
+	var _ pubsub.PubSub = publisher
 
 	// Test publish functionality
 	err := publisher.Publish(context.Background(), "test-topic", "test-data")

@@ -8,7 +8,6 @@ import (
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/overlay/topic"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // UIConfig represents web UI configuration
@@ -64,9 +63,3 @@ type Migration struct {
 	Up   func(db *sql.DB) error
 	Down func(db *sql.DB) error // optional
 }
-
-// LookupServiceFactory represents a factory function for creating lookup services with SQL database
-type LookupServiceFactory func(db *sql.DB) (engine.LookupService, []Migration, error)
-
-// MongoLookupServiceFactory represents a factory function for creating lookup services with MongoDB
-type MongoLookupServiceFactory func(db *mongo.Database) (engine.LookupService, error)
