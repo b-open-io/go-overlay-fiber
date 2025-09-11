@@ -27,7 +27,7 @@ func main() {
 	if envPort := os.Getenv("PORT"); envPort != "" {
 		port, _ = strconv.Atoi(envPort)
 	} else {
-		port = 8080
+		port = 8081
 	}
 
 	slog.SetLogLoggerLevel(slog.LevelInfo)
@@ -66,6 +66,8 @@ func main() {
 
 	// Configure the engine with auto-configuration for SHIP/SLAP services
 	overlayServer.ConfigureEngine(true)
+
+	slog.Info("Starting server", "port", port)
 
 	// Lastly, start the server!
 	if err := overlayServer.Start(); err != nil {
