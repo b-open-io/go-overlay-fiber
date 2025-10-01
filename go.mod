@@ -6,20 +6,38 @@ require (
 	github.com/b-open-io/overlay v0.0.0-20250811192015-2902186637c8
 	github.com/bsv-blockchain/go-overlay-discovery-services v0.0.0-00010101000000-000000000000
 	github.com/bsv-blockchain/go-overlay-services v0.1.1
-	github.com/bsv-blockchain/go-sdk v1.2.8
+	github.com/bsv-blockchain/go-sdk v1.2.10
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/gofiber/contrib/websocket v1.3.2
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.32
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	go.mongodb.org/mongo-driver v1.17.4
 )
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.39.1 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.1 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.31.10 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.18.14 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.8 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.8 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.8 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.8.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.29.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.38.5 // indirect
+	github.com/aws/smithy-go v1.23.0 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bsv-blockchain/go-wallet-toolbox v0.118.1 // indirect
@@ -147,15 +165,15 @@ require (
 	go.uber.org/mock v0.5.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/crypto v0.41.0 // indirect
+	golang.org/x/crypto v0.42.0 // indirect
 	golang.org/x/exp v0.0.0-20250606033433-dcc06ee1d476 // indirect
-	golang.org/x/mod v0.26.0 // indirect
-	golang.org/x/net v0.43.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/mod v0.27.0 // indirect
+	golang.org/x/net v0.44.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.35.0 // indirect
+	golang.org/x/tools v0.36.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -170,14 +188,12 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace github.com/4chain-ag/go-overlay-services => github.com/bsv-blockchain/go-overlay-services v0.1.1
+replace github.com/4chain-ag/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.0-20251001230433-ee0be7ff26de
 
-replace github.com/bsv-blockchain/go-bsv-middleware => ../go-bsv-middleware
+replace github.com/bsv-blockchain/go-overlay-discovery-services => github.com/b-open-io/go-overlay-discovery-services v0.0.0-20251001223801-8362f05416e9
 
-replace github.com/bsv-blockchain/go-overlay-discovery-services => ../go-overlay-discovery-services
+replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251001230626-cc5b657e53f7
 
-replace github.com/b-open-io/overlay => ../overlay
+replace github.com/bsv-blockchain/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.0-20251001230433-ee0be7ff26de
 
-replace github.com/bsv-blockchain/go-overlay-services => ../go-overlay-services
-
-replace github.com/bsv-blockchain/go-sdk => ../go-sdk
+replace github.com/bsv-blockchain/go-sdk => github.com/b-open-io/go-sdk v1.1.25-0.20251001225917-dadc6de38e4d

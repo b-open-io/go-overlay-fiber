@@ -262,7 +262,7 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	beefStorageURL := os.Getenv("BEEF_STORAGE")
 
 	// Use overlay storage with database connection
-	eventStorage, err := config.CreateEventStorage(eventStorageURL, beefStorageURL, "", "")
+	eventStorage, err := config.CreateEventStorage(eventStorageURL, beefStorageURL, "", "", nil)
 	if err != nil {
 		s.Logger.Error("Failed to create overlay storage", "error", err)
 		return s
