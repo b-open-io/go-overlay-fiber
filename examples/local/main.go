@@ -1,12 +1,12 @@
 package main
 
 import (
-	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"log/slog"
 	"os"
 	"strconv"
 
 	"github.com/bsv-blockchain/go-overlay-fiber/pkg/server"
+	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 )
 
 // Hi there! Let's configure Go Overlay Fiber!
@@ -34,8 +34,13 @@ func main() {
 
 	overlayServer.ConfigurePort(port)
 
-	// Connect to SQLite database with a simple file path
-	overlayServer.ConfigureDatabase("sqlite3", "./data.db")
+	// Connect to MySQL database
+	if mysqlURL := os.Getenv("MYSQL_URL"); mysqlURL != "" {
+		overlayServer.ConfigureDatabase("mysql", mysqlURL)
+	} else {
+		// Connect to SQLite database with a simple file path
+		overlayServer.ConfigureDatabase("sqlite3", "./data.db")
+	}
 
 	// Also, be sure to connect to MongoDB
 	if mongoURL := os.Getenv("MONGO_URL"); mongoURL != "" {
