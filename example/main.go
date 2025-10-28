@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/any"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/hello"
 	"github.com/bsv-blockchain/go-overlay-fiber/pkg/server"
 )
 
@@ -48,6 +49,10 @@ func main() {
 	// Any
 	overlayServer.ConfigureTopicManager("tm_anytx", any.NewAnyTopicManager())
 	overlayServer.ConfigureLookupService("ls_anytx", any.NewAnyLookupService(overlayServer.MongoDB))
+
+	// HelloWorld
+	overlayServer.ConfigureTopicManager("tm_helloworld", hello.NewHelloWorldTopicManager())
+	overlayServer.ConfigureLookupService("ls_helloworld", hello.NewHelloWorldLookupService(overlayServer.MongoDB))
 
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)

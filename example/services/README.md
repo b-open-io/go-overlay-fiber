@@ -15,6 +15,17 @@ The simplest possible overlay service that admits all transaction outputs with n
 
 See [any/README.md](./any/README.md) for details.
 
+### HelloWorld Service (`hello/`)
+
+A messaging protocol using BRC-48 Pay-to-Push-Drop outputs for broadcasting UTF-8 messages.
+
+- **Topic Manager**: `tm_helloworld` - Validates PushDrop messages with signatures
+- **Lookup Service**: `ls_helloworld` - Full-text search and querying of messages
+- **Complexity**: Low
+- **Use Case**: Messaging, basic PushDrop implementation example
+
+See [hello/README.md](./hello/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -55,9 +66,12 @@ These services are ports of the examples from [overlay-express-examples](https:/
 Additional services to be ported:
 
 - **SlackThreads** - Simple script validation for hash storage
-- **Hello World** - Basic messaging with PushDrop encoding
 - **UHRP** - Universal Hash Resolution Protocol
 - **DID** - Decentralized Identifiers
 - **Message Box** - Host advertisements with identity verification
+- **UMP** - Universal Messaging Protocol
+- **ProtoMap** - Protocol metadata registration
+- **BasketMap** - Basket type registration
+- **CertMap** - Certificate type mapping
 
 Contributions welcome!
