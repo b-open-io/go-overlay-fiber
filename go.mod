@@ -6,7 +6,7 @@ require (
 	github.com/b-open-io/overlay v0.0.0-20250811192015-2902186637c8
 	github.com/bsv-blockchain/go-overlay-discovery-services v0.0.0-00010101000000-000000000000
 	github.com/bsv-blockchain/go-overlay-services v0.1.1
-	github.com/bsv-blockchain/go-sdk v1.2.10
+	github.com/bsv-blockchain/go-sdk v1.2.11
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/gofiber/contrib/websocket v1.3.2
 	github.com/gofiber/fiber/v2 v2.52.9
@@ -165,15 +165,16 @@ require (
 	go.uber.org/mock v0.5.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/crypto v0.42.0 // indirect
+	golang.org/x/crypto v0.43.0 // indirect
 	golang.org/x/exp v0.0.0-20250606033433-dcc06ee1d476 // indirect
-	golang.org/x/mod v0.27.0 // indirect
-	golang.org/x/net v0.44.0 // indirect
+	golang.org/x/mod v0.28.0 // indirect
+	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/sys v0.36.0 // indirect
-	golang.org/x/text v0.29.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/telemetry v0.0.0-20250908211612-aef8a434d053 // indirect
+	golang.org/x/text v0.30.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.36.0 // indirect
+	golang.org/x/tools v0.37.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -188,12 +189,10 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace github.com/4chain-ag/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.0-20251001230433-ee0be7ff26de
+replace github.com/4chain-ag/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.1-0.20251027225102-d0dae0f25576
 
-replace github.com/bsv-blockchain/go-overlay-discovery-services => github.com/b-open-io/go-overlay-discovery-services v0.0.0-20251001223801-8362f05416e9
+replace github.com/bsv-blockchain/go-overlay-discovery-services => github.com/b-open-io/go-overlay-discovery-services v0.0.0-20251027230914-d06dcecce307
 
-replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251001230626-cc5b657e53f7
+replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251028174632-2445e020f506
 
-replace github.com/bsv-blockchain/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.0-20251001230433-ee0be7ff26de
-
-replace github.com/bsv-blockchain/go-sdk => github.com/b-open-io/go-sdk v1.1.25-0.20251001225917-dadc6de38e4d
+replace github.com/bsv-blockchain/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.1-0.20251027225102-d0dae0f25576
