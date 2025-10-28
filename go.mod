@@ -193,6 +193,6 @@ replace github.com/4chain-ag/go-overlay-services => github.com/b-open-io/go-over
 
 replace github.com/bsv-blockchain/go-overlay-discovery-services => github.com/b-open-io/go-overlay-discovery-services v0.0.0-20251027230914-d06dcecce307
 
-replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251028174632-2445e020f506
+replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251028220127-f2d0e1da6224
 
 replace github.com/bsv-blockchain/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.1-0.20251027225102-d0dae0f25576

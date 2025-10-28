@@ -59,8 +59,8 @@ github.com/b-open-io/go-overlay-discovery-services v0.0.0-20251027230914-d06dcec
 github.com/b-open-io/go-overlay-discovery-services v0.0.0-20251027230914-d06dcecce307/go.mod h1:JN55HuT6ahUhAnA/5qTRfO09mZXp+cymSNkZ7h4nHlg=
 github.com/b-open-io/go-overlay-services v0.0.1-0.20251027225102-d0dae0f25576 h1:UJ8FjSOEZEeQtkzbOYrTefpM66CA+Y/qhHTbe+LmR0o=
 github.com/b-open-io/go-overlay-services v0.0.1-0.20251027225102-d0dae0f25576/go.mod h1:WOkEkrk/NBLEXn2blclBl+AfPBwE2F9vGIKCdYxW5AM=
-github.com/b-open-io/overlay v0.3.1-0.20251028174632-2445e020f506 h1:vkxu0mjeTMns9ma9lJ4MiNv4lBjS7ShdbTGU7ABXakA=
-github.com/b-open-io/overlay v0.3.1-0.20251028174632-2445e020f506/go.mod h1:g67dllUmrTVA+gHbR57yFaPARqA1RMX2rku0Rzs111o=
+github.com/b-open-io/overlay v0.3.1-0.20251028220127-f2d0e1da6224 h1:BGHry29UTbX2qSSpyk4EqlBpCq1aoFbvEox+myh1S4Y=
+github.com/b-open-io/overlay v0.3.1-0.20251028220127-f2d0e1da6224/go.mod h1:g67dllUmrTVA+gHbR57yFaPARqA1RMX2rku0Rzs111o=
 github.com/benbjohnson/clock v1.3.5 h1:VvXlSJBzZpA/zum6Sj74hxwYI2DIxRWuNIoXAzHZz5o=
 github.com/benbjohnson/clock v1.3.5/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
