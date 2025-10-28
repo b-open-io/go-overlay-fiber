@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/b-open-io/overlay/config"
-	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/b-open-io/overlay/config"
+	"github.com/b-open-io/overlay/headers"
 	"github.com/b-open-io/overlay/pubsub"
 	"github.com/b-open-io/overlay/storage"
 	"github.com/bsv-blockchain/go-overlay-discovery-services/pkg/advertiser"
@@ -21,6 +21,7 @@ import (
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/gasp"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay"
+	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/chaintracker"
 	"github.com/bsv-blockchain/go-sdk/util"
@@ -335,7 +336,9 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	}
 
 	if engineConfig.ChainTracker == nil {
-		engineConfig.ChainTracker = chaintracker.NewWhatsOnChain(chaintracker.MainNet, "")
+		engineConfig.ChainTracker = headers.NewClient(headers.ClientParams{
+			Url: "https://mainnet.headers.gorillapool.io",
+		})
 	}
 
 	// Copy configured topic managers and lookup services to engine
