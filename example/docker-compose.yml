@@ -1,12 +1,12 @@
-name: go-overlay-local
+name: go-overlay-example
 
 services:
 
   mongo:
     image: mongo:8
-    container_name: go-overlay-local-mongo
+    container_name: go-overlay-example-mongo
     ports:
-      - "27020:27017"
+      - "27018:27017"
     volumes:
       - mongo_data:/data/db
     environment:
@@ -20,9 +20,9 @@ services:
 
   mysql:
     image: mysql:8
-    container_name: go-overlay-local-mysql
+    container_name: go-overlay-example-mysql
     ports:
-      - "3320:3306"
+      - "3308:3306"
     environment:
       MYSQL_ROOT_PASSWORD: example
       MYSQL_DATABASE: appdb
@@ -38,9 +38,9 @@ services:
 
   app:
     build:
-      context: ../../..
-      dockerfile: go-overlay-fiber/examples/local/Dockerfile
-    container_name: go-overlay-local-app
+      context: ..
+      dockerfile: example/Dockerfile
+    container_name: go-overlay-example-app
     depends_on:
       mongo:
         condition: service_healthy
@@ -52,9 +52,10 @@ services:
       MONGO_URL: mongodb://root:example@mongo:27017
       MYSQL_URL: appuser:apppass@tcp(mysql:3306)/appdb
       EVENT_STORAGE: appuser:apppass@tcp(mysql:3306)/appdb
+      BEEF_STORAGE: appuser:apppass@tcp(mysql:3306)/appdb
       PORT: "8080"
       SERVER_PRIVATE_KEY: 6f552333a2dd110ba07c60f9888ec903a3ef62b7f43983c285dd760a7456eb33
-      HOSTING_URL: http://localhost:8080
+      HOSTING_URL: https://your.overlay.network
 
 volumes:
   mongo_data:

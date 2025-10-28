@@ -1,6 +1,9 @@
 /.claude
 /go-overlay-fiber
-/demo
+/demo-ui
 *.db*
 /.idea
 *.sqlite
+*.log
+/example/example
+/example/.env
