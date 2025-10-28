@@ -52,10 +52,6 @@ func main() {
         overlayServer.ConfigureMongoDB(mongoURL)
     }
 
-    // Add your topic managers and lookup services here
-    // overlayServer.ConfigureTopicManager(...)
-    // overlayServer.ConfigureLookupServiceWithMongo(...)
-
     // Enable GASP synchronization
     overlayServer.ConfigureGASPSync(true)
 
@@ -70,18 +66,12 @@ func main() {
 }
 ```
 
-### Running Examples
+### Running Example
 
-#### Basic Example (SQLite)
+#### Example (Docker)
 ```bash
-cd examples/basic
-SERVER_PRIVATE_KEY=dummy HOSTING_URL=http://localhost:8080 go run main.go
-```
-
-#### Local Example (Docker with MySQL)
-```bash
-cd examples/local
-docker compose up
+cd example
+docker compose up -d
 ```
 
 ## API Endpoints
