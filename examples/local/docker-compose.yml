@@ -12,6 +12,11 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mysql:
     image: mysql:8
@@ -25,19 +30,28 @@ services:
       MYSQL_PASSWORD: apppass
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pexample"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   app:
     build:
       context: ../../..
       dockerfile: go-overlay-fiber/examples/local/Dockerfile
     container_name: go-overlay-local-app
     depends_on:
-      - mongo
-      - mysql
+      mongo:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       MONGO_URL: mongodb://root:example@mongo:27017
       MYSQL_URL: appuser:apppass@tcp(mysql:3306)/appdb
+      EVENT_STORAGE: appuser:apppass@tcp(mysql:3306)/appdb
       PORT: "8080"
       SERVER_PRIVATE_KEY: 6f552333a2dd110ba07c60f9888ec903a3ef62b7f43983c285dd760a7456eb33
       HOSTING_URL: http://localhost:8080
