@@ -27,7 +27,7 @@ export MONGO_URL="mongodb://localhost:27017/overlay"
 2. Run the example:
 
 ```bash
-cd examples/basic
+cd example
 go run main.go
 ```
 
