@@ -16,6 +16,13 @@ An opinionated but configurable [Overlay Services](https://github.com/bsv-blockc
 
 ## Quick Start
 
+### Running Example
+
+```bash
+cd example
+docker compose up -d
+```
+
 ### Installation
 
 ```bash
@@ -64,14 +71,6 @@ func main() {
         os.Exit(1)
     }
 }
-```
-
-### Running Example
-
-#### Example (Docker)
-```bash
-cd example
-docker compose up -d
 ```
 
 ## API Endpoints
