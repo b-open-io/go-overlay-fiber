@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
@@ -68,25 +68,25 @@ func (ls *DIDLookupService) OutputAdmittedByTopic(ctx context.Context, payload *
 	txid := payload.Outpoint.Txid.String()
 	outputIndex := int(payload.Outpoint.Index)
 
-	log.Printf("DID lookup service outputAdded called with %s.%d", txid, outputIndex)
+	slog.Debug("DID lookup service output admitted", "txid", txid, "outputIndex", outputIndex)
 
 	// Decode the DID token fields from the Bitcoin outputScript
 	result := pushdrop.Decode(payload.LockingScript)
 	if result == nil || len(result.Fields) < 2 {
 		err := fmt.Errorf("invalid DID token: invalid PushDrop structure")
-		log.Printf("DIDLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("DIDLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
 	// Extract serial number (convert to UTF-8 string)
 	serialNumber := string(result.Fields[0])
 
-	log.Printf("DID lookup service is storing a record: %s.%d, serialNumber=%s", txid, outputIndex, serialNumber)
+	slog.Debug("DID lookup service storing record", "txid", txid, "outputIndex", outputIndex, "serialNumber", serialNumber)
 
 	// Store DID record
 	err := ls.storage.StoreRecord(txid, outputIndex, serialNumber)
 	if err != nil {
-		log.Printf("DIDLookupService: failed to store %s.%d: %v", txid, outputIndex, err)
+		slog.Error("DIDLookupService: failed to store record", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
@@ -126,7 +126,7 @@ func (ls *DIDLookupService) OutputBlockHeightUpdated(ctx context.Context, txid *
 
 // Lookup answers a lookup query
 func (ls *DIDLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
-	log.Printf("DID lookup with question: %+v", question)
+	slog.Debug("DID lookup query received", "service", question.Service, "query", question.Query)
 
 	if question == nil {
 		return nil, fmt.Errorf("a valid query must be provided")

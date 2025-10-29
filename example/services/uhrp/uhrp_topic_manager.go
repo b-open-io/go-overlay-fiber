@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
@@ -44,7 +44,7 @@ func (tm *UHRPTopicManager) IdentifyAdmissibleOutputs(
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 
-	log.Printf("UHRP topic manager invoked with %d previous UTXOs", len(previousCoins))
+	slog.Info("UHRP topic manager invoked", "previousUTXOs", len(previousCoins))
 
 	// Parse transaction from BEEF
 	tx, err := transaction.NewTransactionFromBEEF(beef)
@@ -65,10 +65,10 @@ func (tm *UHRPTopicManager) IdentifyAdmissibleOutputs(
 	// Inspect every output
 	for index, output := range tx.Outputs {
 		if err := tm.validateOutput(output, index); err == nil {
-			log.Printf("[OUTPUT %d] PASSED validation", index)
+			slog.Info("UHRP output passed validation", "index", index)
 			outputsToAdmit = append(outputsToAdmit, uint32(index))
 		} else {
-			log.Printf("[OUTPUT %d] FAILED validation: %v", index, err)
+			slog.Debug("UHRP output failed validation", "index", index, "error", err)
 		}
 	}
 
@@ -79,14 +79,14 @@ func (tm *UHRPTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	if len(outputsToAdmit) == 0 {
-		log.Printf("No valid UHRP advertisements found, allowing transaction to pass without admitting outputs")
+		slog.Debug("No valid UHRP advertisements found, allowing transaction to pass without admitting outputs")
 		return overlay.AdmittanceInstructions{
 			OutputsToAdmit: []uint32{},
 			CoinsToRetain:  coinsToRetain,
 		}, nil
 	}
 
-	log.Printf("%d output(s) admitted as valid UHRP advertisement(s)", len(outputsToAdmit))
+	slog.Info("UHRP outputs admitted", "count", len(outputsToAdmit))
 
 	return overlay.AdmittanceInstructions{
 		OutputsToAdmit: outputsToAdmit,
@@ -148,15 +148,14 @@ func (tm *UHRPTopicManager) validateOutput(output *transaction.TransactionOutput
 		return fmt.Errorf("invalid file size: must be >= 1")
 	}
 
-	log.Printf("[OUTPUT %d] Decoded UHRP advertisement: location=%s, expiryTime=%d, fileSize=%d",
-		index, fileLocationString, expiryTime, fileSize)
+	slog.Debug("Decoded UHRP advertisement", "index", index, "location", fileLocationString, "expiryTime", expiryTime, "fileSize", fileSize)
 
 	// Verify signature
 	if err := tm.verifySignature(hostIdentityKeyBuf, result.Fields[:5], signatureBuf); err != nil {
 		return fmt.Errorf("signature verification failed: %w", err)
 	}
 
-	log.Printf("[OUTPUT %d] Signature PASSED verification", index)
+	slog.Debug("UHRP signature verified", "index", index)
 
 	return nil
 }

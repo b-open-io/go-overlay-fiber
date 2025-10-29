@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
@@ -85,7 +85,7 @@ func (ls *UHRPLookupService) OutputAdmittedByTopic(ctx context.Context, payload 
 	result := pushdrop.Decode(payload.LockingScript)
 	if result == nil || len(result.Fields) < 6 {
 		err := fmt.Errorf("invalid UHRP token: invalid PushDrop structure")
-		log.Printf("UHRPLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("UHRPLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
@@ -103,7 +103,7 @@ func (ls *UHRPLookupService) OutputAdmittedByTopic(ctx context.Context, payload 
 	uhrpUrl, err := storage.GetURLForHash(hashBuf)
 	if err != nil {
 		err := fmt.Errorf("failed to generate UHRP URL: %w", err)
-		log.Printf("UHRPLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("UHRPLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
@@ -114,7 +114,7 @@ func (ls *UHRPLookupService) OutputAdmittedByTopic(ctx context.Context, payload 
 	expiryTime, err := readVarInt(expiryTimeBuf)
 	if err != nil {
 		err := fmt.Errorf("failed to parse expiry time: %w", err)
-		log.Printf("UHRPLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("UHRPLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
@@ -122,17 +122,16 @@ func (ls *UHRPLookupService) OutputAdmittedByTopic(ctx context.Context, payload 
 	fileSize, err := readVarInt(fileSizeBuf)
 	if err != nil {
 		err := fmt.Errorf("failed to parse file size: %w", err)
-		log.Printf("UHRPLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("UHRPLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
-	log.Printf("[LOOKUP] Decoded UHRP advertisement: uhrpUrl=%s, location=%s, expiry=%d, size=%d",
-		uhrpUrl, hostedFileLocation, expiryTime, fileSize)
+	slog.Debug("Decoded UHRP advertisement", "uhrpUrl", uhrpUrl, "location", hostedFileLocation, "expiry", expiryTime, "size", fileSize)
 
 	// Store the advertisement
 	err = ls.storage.StoreRecord(uhrpUrl, txid, outputIndex, hostIdentityKey, hostedFileLocation, expiryTime, fileSize)
 	if err != nil {
-		log.Printf("UHRPLookupService: failed to store %s.%d: %v", txid, outputIndex, err)
+		slog.Error("UHRPLookupService: failed to store record", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 

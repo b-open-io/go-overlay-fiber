@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
@@ -82,13 +82,13 @@ func (ls *SlackThreadLookupService) OutputAdmittedByTopic(ctx context.Context, p
 	chunks, err := payload.LockingScript.ParseOps()
 	if err != nil {
 		err := fmt.Errorf("failed to parse script chunks: %w", err)
-		log.Printf("SlackThreadLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("SlackThreadLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
 	if len(chunks) != 3 {
 		err := fmt.Errorf("invalid SlackThread token: expected 3 chunks, got %d", len(chunks))
-		log.Printf("SlackThreadLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("SlackThreadLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
@@ -96,7 +96,7 @@ func (ls *SlackThreadLookupService) OutputAdmittedByTopic(ctx context.Context, p
 	threadHashBytes := chunks[1].Data
 	if len(threadHashBytes) != 32 {
 		err := fmt.Errorf("invalid SlackThread token: thread hash must be exactly 32 bytes, got %d", len(threadHashBytes))
-		log.Printf("SlackThreadLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("SlackThreadLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
@@ -106,7 +106,7 @@ func (ls *SlackThreadLookupService) OutputAdmittedByTopic(ctx context.Context, p
 	// Persist for future lookup
 	err = ls.storage.StoreRecord(txid, outputIndex, threadHashString)
 	if err != nil {
-		log.Printf("SlackThreadLookupService: failed to store %s.%d: %v", txid, outputIndex, err)
+		slog.Error("SlackThreadLookupService: failed to store record", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 

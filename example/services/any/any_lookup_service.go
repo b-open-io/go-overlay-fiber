@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
@@ -47,7 +47,7 @@ func (ls *AnyLookupService) OutputAdmittedByTopic(ctx context.Context, payload *
 
 	err := ls.storage.StoreRecord(txid, outputIndex)
 	if err != nil {
-		log.Printf("AnyLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("AnyLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 

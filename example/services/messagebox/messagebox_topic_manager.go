@@ -3,7 +3,7 @@ package messagebox
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -57,7 +57,7 @@ func (tm *MessageBoxTopicManager) IdentifyAdmissibleOutputs(
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 
-	log.Println("MessageBox topic manager invoked")
+	slog.Info("MessageBox topic manager invoked")
 
 	// Parse transaction from BEEF
 	tx, err := transaction.NewTransactionFromBEEF(beef)
@@ -75,20 +75,20 @@ func (tm *MessageBoxTopicManager) IdentifyAdmissibleOutputs(
 		}, fmt.Errorf("missing parameter: outputs")
 	}
 
-	log.Printf("[TOPIC MANAGER] Decoding transaction with %d outputs", len(tx.Outputs))
+	slog.Debug("MessageBox topic manager decoding transaction", "outputCount", len(tx.Outputs))
 
 	// Inspect every output
 	for index, output := range tx.Outputs {
 		if err := tm.validateOutput(output, index); err == nil {
-			log.Printf("[OUTPUT %d] PASSED validation", index)
+			slog.Debug("MessageBox output passed validation", "index", index)
 			outputsToAdmit = append(outputsToAdmit, uint32(index))
 		} else {
-			log.Printf("[OUTPUT %d] FAILED validation: %v", index, err)
+			slog.Debug("MessageBox output failed validation", "index", index, "error", err)
 		}
 	}
 
 	if len(outputsToAdmit) > 0 {
-		log.Printf("[TOPIC MANAGER] Outputs to admit: %v", outputsToAdmit)
+		slog.Info("MessageBox outputs admitted", "count", len(outputsToAdmit), "indices", outputsToAdmit)
 	}
 
 	// MessageBox protocol retains previous coins
@@ -111,7 +111,7 @@ func (tm *MessageBoxTopicManager) validateOutput(output *transaction.Transaction
 		return fmt.Errorf("not a valid PushDrop output")
 	}
 
-	log.Printf("[OUTPUT %d] PushDrop decoded fields count: %d", index, len(result.Fields))
+	slog.Debug("MessageBox PushDrop decoded", "index", index, "fieldCount", len(result.Fields))
 
 	// Must have at least 3 fields (identityKey + host + signature)
 	if len(result.Fields) < 3 {
@@ -134,7 +134,7 @@ func (tm *MessageBoxTopicManager) validateOutput(output *transaction.Transaction
 		return fmt.Errorf("invalid host: empty after UTF-8 decoding")
 	}
 
-	log.Printf("[OUTPUT %d] Decoded host: %s", index, host)
+	slog.Debug("MessageBox decoded host", "index", index, "host", host)
 
 	// Parse identity key as public key
 	pubKey, err := ec.ParsePubKey(identityKeyBuf)
@@ -145,7 +145,7 @@ func (tm *MessageBoxTopicManager) validateOutput(output *transaction.Transaction
 	// Concatenate data fields for signature verification (identityKey + host)
 	dataToVerify := append(identityKeyBuf, hostBuf...)
 
-	log.Printf("[OUTPUT %d] Verifying signature over %d bytes of data", index, len(dataToVerify))
+	slog.Debug("MessageBox verifying signature", "index", index, "dataLength", len(dataToVerify))
 
 	// Parse and verify signature
 	sig, err := ec.ParseSignature(signature)
@@ -157,7 +157,7 @@ func (tm *MessageBoxTopicManager) validateOutput(output *transaction.Transaction
 		return fmt.Errorf("signature verification failed")
 	}
 
-	log.Printf("[OUTPUT %d] Signature PASSED verification", index)
+	slog.Debug("MessageBox signature verified", "index", index)
 
 	return nil
 }

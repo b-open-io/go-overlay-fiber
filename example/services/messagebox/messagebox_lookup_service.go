@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
@@ -108,7 +108,7 @@ func (ls *MessageBoxLookupService) OutputAdmittedByTopic(ctx context.Context, pa
 	result := pushdrop.Decode(payload.LockingScript)
 	if result == nil || len(result.Fields) < 3 {
 		err := fmt.Errorf("invalid MessageBox token: invalid PushDrop structure")
-		log.Printf("MessageBoxLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("MessageBoxLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
@@ -118,19 +118,19 @@ func (ls *MessageBoxLookupService) OutputAdmittedByTopic(ctx context.Context, pa
 
 	if len(identityKeyBuf) == 0 || len(hostBuf) == 0 {
 		err := fmt.Errorf("invalid MessageBox token: empty fields")
-		log.Printf("MessageBoxLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("MessageBoxLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
 	identityKey := hex.EncodeToString(identityKeyBuf)
 	host := string(hostBuf)
 
-	log.Printf("[LOOKUP] Decoded advertisement: identityKey=%s, host=%s", identityKey, host)
+	slog.Debug("MessageBox decoded advertisement", "identityKey", identityKey, "host", host)
 
 	// Store the advertisement
 	err := ls.storage.StoreRecord(identityKey, host, txid, outputIndex)
 	if err != nil {
-		log.Printf("MessageBoxLookupService: failed to store %s.%d: %v", txid, outputIndex, err)
+		slog.Error("MessageBoxLookupService: failed to store record", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 

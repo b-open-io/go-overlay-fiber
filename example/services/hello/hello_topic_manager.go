@@ -3,7 +3,7 @@ package hello
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -45,7 +45,7 @@ func (tm *HelloWorldTopicManager) IdentifyAdmissibleOutputs(
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 
-	log.Println("HelloWorld topic manager invoked")
+	slog.Info("HelloWorld topic manager invoked")
 
 	// Parse transaction from BEEF
 	tx, err := transaction.NewTransactionFromBEEF(beef)
@@ -71,7 +71,7 @@ func (tm *HelloWorldTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	if len(outputsToAdmit) > 0 {
-		log.Printf("Admitted %d HelloWorld output(s)!", len(outputsToAdmit))
+		slog.Info("HelloWorld outputs admitted", "count", len(outputsToAdmit))
 	}
 
 	// The HelloWorld protocol never retains previous coins

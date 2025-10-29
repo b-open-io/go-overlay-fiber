@@ -3,7 +3,7 @@ package did
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/overlay"
@@ -43,7 +43,7 @@ func (tm *DIDTopicManager) IdentifyAdmissibleOutputs(
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 
-	log.Printf("DID topic manager was invoked with %d previous UTXOs", len(previousCoins))
+	slog.Info("DID topic manager was invoked", "previousUTXOs", len(previousCoins))
 
 	// Parse the transaction from BEEF
 	parsedTransaction, err := transaction.NewTransactionFromBEEF(beef)
@@ -52,7 +52,7 @@ func (tm *DIDTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	txid := parsedTransaction.TxID()
-	log.Printf("DID topic manager has parsed the transaction: %s", txid)
+	slog.Debug("DID topic manager parsed transaction", "txid", txid)
 
 	// Validate params
 	if len(parsedTransaction.Inputs) < 1 {
@@ -68,13 +68,13 @@ func (tm *DIDTopicManager) IdentifyAdmissibleOutputs(
 		// Decode the fields
 		result := pushdrop.Decode(output.LockingScript)
 		if result == nil {
-			log.Printf("Output %d: failed to decode PushDrop", i)
+			slog.Debug("Output failed to decode PushDrop", "index", i)
 			continue
 		}
 
 		// Check that there is exactly one field + signature (2 fields total)
 		if len(result.Fields) != 2 {
-			log.Printf("Output %d: DID token must have exactly one field + signature, got %d fields", i, len(result.Fields))
+			slog.Debug("DID token field count invalid", "index", i, "expected", 2, "got", len(result.Fields))
 			continue
 		}
 
@@ -82,7 +82,7 @@ func (tm *DIDTopicManager) IdentifyAdmissibleOutputs(
 		serialNumber := string(result.Fields[0])
 
 		if serialNumber == "" {
-			log.Printf("Output %d: DID token must contain a valid serialNumber", i)
+			slog.Debug("DID token missing serial number", "index", i)
 			continue
 		}
 
@@ -91,16 +91,16 @@ func (tm *DIDTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	if len(outputsToAdmit) == 0 && len(previousCoins) == 0 {
-		log.Printf("DID topic manager: no outputs admitted and no previous coins consumed")
+		slog.Debug("DID topic manager: no outputs admitted and no previous coins consumed")
 		return overlay.AdmittanceInstructions{}, fmt.Errorf("no outputs admitted")
 	}
 
 	if len(outputsToAdmit) > 0 {
-		log.Printf("Admitted %d DID output(s)", len(outputsToAdmit))
+		slog.Info("DID outputs admitted", "count", len(outputsToAdmit))
 	}
 
 	if len(previousCoins) > 0 {
-		log.Printf("Consumed %d previous DID coin(s)", len(previousCoins))
+		slog.Info("Consumed previous DID coins", "count", len(previousCoins))
 	}
 
 	return overlay.AdmittanceInstructions{

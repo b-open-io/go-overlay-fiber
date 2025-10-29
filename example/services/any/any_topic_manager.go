@@ -3,7 +3,7 @@ package any
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/overlay"
@@ -40,7 +40,7 @@ func (tm *AnyTopicManager) IdentifyAdmissibleOutputs(
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 
-	log.Println("Any topic manager invoked")
+	slog.Info("Any topic manager invoked")
 
 	// Parse transaction from BEEF
 	tx, err := transaction.NewTransactionFromBEEF(beef)

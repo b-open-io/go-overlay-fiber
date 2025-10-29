@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
@@ -91,8 +91,7 @@ func (ls *UMPLookupService) OutputAdmittedByTopic(ctx context.Context, output *e
 		return fmt.Errorf("failed to insert UMP record: %w", err)
 	}
 
-	log.Printf("UMP token admitted: txid=%s, outputIndex=%d, presentationHash=%s",
-		record.Txid, record.OutputIndex, presentationHash[:16]+"...")
+	slog.Debug("UMP token admitted", "txid", record.Txid, "outputIndex", record.OutputIndex, "presentationHash", presentationHash[:16]+"...")
 
 	return nil
 }
@@ -110,7 +109,7 @@ func (ls *UMPLookupService) OutputSpent(ctx context.Context, output *engine.Outp
 		return fmt.Errorf("failed to delete UMP record: %w", err)
 	}
 
-	log.Printf("UMP token spent: txid=%s, outputIndex=%d", txid, outputIndex)
+	slog.Debug("UMP token spent", "txid", txid, "outputIndex", outputIndex)
 
 	return nil
 }

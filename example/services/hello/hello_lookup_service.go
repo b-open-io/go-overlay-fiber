@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
@@ -68,7 +68,7 @@ func (ls *HelloWorldLookupService) OutputAdmittedByTopic(ctx context.Context, pa
 	result := pushdrop.Decode(payload.LockingScript)
 	if result == nil || len(result.Fields) < 2 {
 		err := fmt.Errorf("invalid HelloWorld token: invalid PushDrop structure")
-		log.Printf("HelloWorldLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("HelloWorldLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
@@ -76,21 +76,21 @@ func (ls *HelloWorldLookupService) OutputAdmittedByTopic(ctx context.Context, pa
 	messageFields := result.Fields[:len(result.Fields)-1]
 	if len(messageFields) != 1 {
 		err := fmt.Errorf("invalid HelloWorld token: wrong field count")
-		log.Printf("HelloWorldLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("HelloWorldLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
 	message := string(messageFields[0])
 	if len(message) < 2 {
 		err := fmt.Errorf("invalid HelloWorld token: message too short")
-		log.Printf("HelloWorldLookupService: failed to index %s.%d: %v", txid, outputIndex, err)
+		slog.Error("HelloWorldLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 
 	// Store the message
 	err := ls.storage.StoreRecord(txid, outputIndex, message)
 	if err != nil {
-		log.Printf("HelloWorldLookupService: failed to store %s.%d: %v", txid, outputIndex, err)
+		slog.Error("HelloWorldLookupService: failed to store record", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err
 	}
 

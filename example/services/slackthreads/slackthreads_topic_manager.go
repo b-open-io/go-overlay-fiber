@@ -3,7 +3,7 @@ package slackthreads
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/overlay"
@@ -54,7 +54,7 @@ func (tm *SlackThreadsTopicManager) IdentifyAdmissibleOutputs(
 	// Inspect every output
 	for i, output := range tx.Outputs {
 		if err := tm.validateOutput(output); err != nil {
-			log.Printf("Error processing output %d: %v", i, err)
+			slog.Debug("Error processing output", "index", i, "error", err)
 			continue
 		}
 
@@ -62,18 +62,14 @@ func (tm *SlackThreadsTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	if len(outputsToAdmit) == 0 {
-		log.Printf("No valid SlackThreads outputs found, allowing transaction to pass without admitting outputs")
+		slog.Debug("No valid SlackThreads outputs found, allowing transaction to pass without admitting outputs")
 		return overlay.AdmittanceInstructions{
 			OutputsToAdmit: []uint32{},
 			CoinsToRetain:  []uint32{},
 		}, nil
 	}
 
-	outputWord := "output"
-	if len(outputsToAdmit) != 1 {
-		outputWord = "outputs"
-	}
-	log.Printf("Admitted %d SlackThreads %s!", len(outputsToAdmit), outputWord)
+	slog.Info("Admitted SlackThreads outputs", "count", len(outputsToAdmit))
 
 	// The SlackThreads protocol never retains previous coins
 	return overlay.AdmittanceInstructions{

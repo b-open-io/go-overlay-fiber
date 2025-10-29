@@ -3,7 +3,7 @@ package ump
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/overlay"
@@ -56,7 +56,7 @@ func (tm *UMPTopicManager) IdentifyAdmissibleOutputs(
 	outputsToAdmit := []uint32{}
 	coinsToRetain := []uint32{}
 
-	log.Printf("UMP topic manager was invoked with %d previous UTXOs", len(previousCoins))
+	slog.Info("UMP topic manager was invoked", "previousUTXOs", len(previousCoins))
 
 	// Parse the transaction from BEEF
 	parsedTransaction, err := transaction.NewTransactionFromBEEF(beef)
@@ -65,7 +65,7 @@ func (tm *UMPTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	txid := parsedTransaction.TxID()
-	log.Printf("UMP topic manager has parsed the transaction: %s", txid)
+	slog.Debug("UMP topic manager parsed transaction", "txid", txid)
 
 	// Validate params
 	if len(parsedTransaction.Inputs) < 1 {
@@ -81,13 +81,13 @@ func (tm *UMPTopicManager) IdentifyAdmissibleOutputs(
 		// Decode the fields
 		result := pushdrop.Decode(output.LockingScript)
 		if result == nil {
-			log.Printf("Output %d: failed to decode PushDrop", i)
+			slog.Debug("Output failed to decode PushDrop", "index", i)
 			continue
 		}
 
 		// UMP tokens must have at least 11 fields
 		if len(result.Fields) < 11 {
-			log.Printf("Output %d: UMP token must have at least 11 fields, got %d fields", i, len(result.Fields))
+			slog.Debug("UMP token field count invalid", "index", i, "expected", ">=11", "got", len(result.Fields))
 			continue
 		}
 
@@ -97,12 +97,12 @@ func (tm *UMPTopicManager) IdentifyAdmissibleOutputs(
 
 		// Both hashes should be 32 bytes (256 bits)
 		if len(presentationHash) != 32 {
-			log.Printf("Output %d: presentationHash must be 32 bytes, got %d bytes", i, len(presentationHash))
+			slog.Debug("presentationHash length invalid", "index", i, "expected", 32, "got", len(presentationHash))
 			continue
 		}
 
 		if len(recoveryHash) != 32 {
-			log.Printf("Output %d: recoveryHash must be 32 bytes, got %d bytes", i, len(recoveryHash))
+			slog.Debug("recoveryHash length invalid", "index", i, "expected", 32, "got", len(recoveryHash))
 			continue
 		}
 
@@ -116,17 +116,17 @@ func (tm *UMPTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	if len(outputsToAdmit) == 0 {
-		log.Printf("No valid UMP tokens found, allowing transaction to pass without admitting outputs")
+		slog.Debug("No valid UMP tokens found, allowing transaction to pass without admitting outputs")
 		return overlay.AdmittanceInstructions{
 			OutputsToAdmit: []uint32{},
 			CoinsToRetain:  coinsToRetain,
 		}, nil
 	}
 
-	log.Printf("Admitted %d UMP output(s)", len(outputsToAdmit))
+	slog.Info("UMP outputs admitted", "count", len(outputsToAdmit))
 
 	if len(coinsToRetain) > 0 {
-		log.Printf("Retained %d previous UMP coin(s)", len(coinsToRetain))
+		slog.Info("Previous UMP coins retained", "count", len(coinsToRetain))
 	}
 
 	return overlay.AdmittanceInstructions{
