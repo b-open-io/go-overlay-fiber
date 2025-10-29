@@ -48,6 +48,17 @@ An identity-based message routing protocol for advertising MessageBox hosts on-c
 
 See [messagebox/README.md](./messagebox/README.md) for details.
 
+### UHRP Service (`uhrp/`)
+
+Universal Hash Resolution Protocol - A protocol for advertising file hosting availability on the blockchain.
+
+- **Topic Manager**: `tm_uhrp` - Validates file hosting advertisements with signature verification
+- **Lookup Service**: `ls_uhrp` - Query by file hash, host, expiry time, or file size
+- **Complexity**: Medium-High
+- **Use Case**: Decentralized CDN, file availability discovery, content hosting advertisements
+
+See [uhrp/README.md](./uhrp/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -87,7 +98,6 @@ These services are ports of the examples from [overlay-express-examples](https:/
 
 Additional services to be ported:
 
-- **UHRP** - Universal Hash Resolution Protocol
 - **DID** - Decentralized Identifiers
 - **UMP** - Universal Messaging Protocol
 - **ProtoMap** - Protocol metadata registration
