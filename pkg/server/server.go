@@ -439,25 +439,14 @@ func (s *OverlayServer) autoConfigureDiscoveryServices() {
 			s.Engine.SyncConfiguration = make(map[string]engine.SyncConfiguration)
 		}
 
-		// Configure tm_ship for SHIP discovery sync if it was auto-configured
-		if _, exists := s.Managers["tm_ship"]; exists {
-			if _, syncExists := s.Engine.SyncConfiguration["tm_ship"]; !syncExists {
-				s.Engine.SyncConfiguration["tm_ship"] = engine.SyncConfiguration{
+		// Auto-configure SHIP sync for all registered topic managers that don't have sync config
+		for topicName := range s.Managers {
+			if _, syncExists := s.Engine.SyncConfiguration[topicName]; !syncExists {
+				s.Engine.SyncConfiguration[topicName] = engine.SyncConfiguration{
 					Type:        engine.SyncConfigurationSHIP,
 					Concurrency: 1,
 				}
-				s.Logger.Info("Auto-configured SHIP sync for tm_ship topic manager")
-			}
-		}
-
-		// Configure tm_slap for SHIP discovery sync if it was auto-configured
-		if _, exists := s.Managers["tm_slap"]; exists {
-			if _, syncExists := s.Engine.SyncConfiguration["tm_slap"]; !syncExists {
-				s.Engine.SyncConfiguration["tm_slap"] = engine.SyncConfiguration{
-					Type:        engine.SyncConfigurationSHIP,
-					Concurrency: 1,
-				}
-				s.Logger.Info("Auto-configured SHIP sync for tm_slap topic manager")
+				s.Logger.Info("Auto-configured SHIP sync for topic manager", "topic", topicName)
 			}
 		}
 	}
