@@ -37,6 +37,17 @@ A protocol for storing 32-byte hashes on-chain using simple script pattern valid
 
 See [slackthreads/README.md](./slackthreads/README.md) for details.
 
+### MessageBox Service (`messagebox/`)
+
+An identity-based message routing protocol for advertising MessageBox hosts on-chain.
+
+- **Topic Manager**: `tm_messagebox` - Validates PushDrop advertisements with identity key signatures
+- **Lookup Service**: `ls_messagebox` - Query hosts by identity key
+- **Complexity**: Medium
+- **Use Case**: Identity-to-host resolution, message routing, host advertisement
+
+See [messagebox/README.md](./messagebox/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -78,7 +89,6 @@ Additional services to be ported:
 
 - **UHRP** - Universal Hash Resolution Protocol
 - **DID** - Decentralized Identifiers
-- **Message Box** - Host advertisements with identity verification
 - **UMP** - Universal Messaging Protocol
 - **ProtoMap** - Protocol metadata registration
 - **BasketMap** - Basket type registration

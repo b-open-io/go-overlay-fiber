@@ -6,6 +6,7 @@ import (
 
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/any"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/hello"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/messagebox"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/slackthreads"
 	"github.com/bsv-blockchain/go-overlay-fiber/pkg/server"
 )
@@ -58,6 +59,10 @@ func main() {
 	// SlackThreads
 	overlayServer.ConfigureTopicManager("tm_slackthread", slackthreads.NewSlackThreadsTopicManager())
 	overlayServer.ConfigureLookupService("ls_slackthread", slackthreads.NewSlackThreadLookupService(overlayServer.MongoDB))
+
+	// MessageBox
+	overlayServer.ConfigureTopicManager("tm_messagebox", messagebox.NewMessageBoxTopicManager())
+	overlayServer.ConfigureLookupService("ls_messagebox", messagebox.NewMessageBoxLookupService(overlayServer.MongoDB))
 
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)
