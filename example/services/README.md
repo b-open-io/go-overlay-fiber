@@ -70,6 +70,17 @@ Universal Hash Resolution Protocol - A protocol for advertising file hosting ava
 
 See [uhrp/README.md](./uhrp/README.md) for details.
 
+### UMP Service (`ump/`)
+
+User Management Protocol - A protocol for managing CWI-style wallet account descriptors on-chain.
+
+- **Topic Manager**: `tm_users` - Validates PushDrop UMP tokens with 11+ fields
+- **Lookup Service**: `ls_users` - Query by presentationHash, recoveryHash, or outpoint
+- **Complexity**: Medium
+- **Use Case**: Wallet recovery, multi-device sync, account management, CWI implementation
+
+See [ump/README.md](./ump/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -109,7 +120,6 @@ These services are ports of the examples from [overlay-express-examples](https:/
 
 Additional services to be ported:
 
-- **UMP** - Universal Messaging Protocol
 - **ProtoMap** - Protocol metadata registration
 - **BasketMap** - Basket type registration
 - **CertMap** - Certificate type mapping
