@@ -62,10 +62,11 @@ func (tm *SlackThreadsTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	if len(outputsToAdmit) == 0 {
+		log.Printf("No valid SlackThreads outputs found, allowing transaction to pass without admitting outputs")
 		return overlay.AdmittanceInstructions{
-			OutputsToAdmit: outputsToAdmit,
+			OutputsToAdmit: []uint32{},
 			CoinsToRetain:  []uint32{},
-		}, fmt.Errorf("SlackThreads topic manager: no outputs admitted")
+		}, nil
 	}
 
 	outputWord := "output"

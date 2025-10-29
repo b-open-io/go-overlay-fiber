@@ -72,18 +72,21 @@ func (tm *UHRPTopicManager) IdentifyAdmissibleOutputs(
 		}
 	}
 
-	if len(outputsToAdmit) == 0 {
-		return overlay.AdmittanceInstructions{
-			OutputsToAdmit: outputsToAdmit,
-			CoinsToRetain:  []uint32{},
-		}, fmt.Errorf("this transaction does not publish a valid UHRP advertisement")
-	}
-
 	// UHRP protocol retains previous coins
 	coinsToRetain := []uint32{}
 	for key := range previousCoins {
 		coinsToRetain = append(coinsToRetain, key)
 	}
+
+	if len(outputsToAdmit) == 0 {
+		log.Printf("No valid UHRP advertisements found, allowing transaction to pass without admitting outputs")
+		return overlay.AdmittanceInstructions{
+			OutputsToAdmit: []uint32{},
+			CoinsToRetain:  coinsToRetain,
+		}, nil
+	}
+
+	log.Printf("%d output(s) admitted as valid UHRP advertisement(s)", len(outputsToAdmit))
 
 	return overlay.AdmittanceInstructions{
 		OutputsToAdmit: outputsToAdmit,

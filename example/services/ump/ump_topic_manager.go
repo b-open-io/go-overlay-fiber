@@ -116,13 +116,14 @@ func (tm *UMPTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	if len(outputsToAdmit) == 0 {
-		log.Printf("UMP topic manager: no valid UMP tokens found")
-		return overlay.AdmittanceInstructions{}, fmt.Errorf("no valid UMP tokens found")
+		log.Printf("No valid UMP tokens found, allowing transaction to pass without admitting outputs")
+		return overlay.AdmittanceInstructions{
+			OutputsToAdmit: []uint32{},
+			CoinsToRetain:  coinsToRetain,
+		}, nil
 	}
 
-	if len(outputsToAdmit) > 0 {
-		log.Printf("Admitted %d UMP output(s)", len(outputsToAdmit))
-	}
+	log.Printf("Admitted %d UMP output(s)", len(outputsToAdmit))
 
 	if len(coinsToRetain) > 0 {
 		log.Printf("Retained %d previous UMP coin(s)", len(coinsToRetain))
