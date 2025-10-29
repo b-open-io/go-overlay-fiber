@@ -26,6 +26,17 @@ A messaging protocol using BRC-48 Pay-to-Push-Drop outputs for broadcasting UTF-
 
 See [hello/README.md](./hello/README.md) for details.
 
+### SlackThreads Service (`slackthreads/`)
+
+A protocol for storing 32-byte hashes on-chain using simple script pattern validation.
+
+- **Topic Manager**: `tm_slackthread` - Validates OP_SHA256 <hash> OP_EQUAL pattern
+- **Lookup Service**: `ls_slackthread` - Query thread hashes by hash, txid, or date range
+- **Complexity**: Low
+- **Use Case**: Hash storage, simple script validation example (NOT PushDrop)
+
+See [slackthreads/README.md](./slackthreads/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -65,7 +76,6 @@ These services are ports of the examples from [overlay-express-examples](https:/
 
 Additional services to be ported:
 
-- **SlackThreads** - Simple script validation for hash storage
 - **UHRP** - Universal Hash Resolution Protocol
 - **DID** - Decentralized Identifiers
 - **Message Box** - Host advertisements with identity verification
