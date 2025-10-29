@@ -23,31 +23,31 @@ The **SlackThread Lookup Service** (service ID: ` + "`ls_slackthread`" + `) lets
 
 ## Example
 
-` + "```" + `typescript
-import { LookupResolver } from '@bsv/sdk'
+` + "```go" + `
+import "github.com/bsv-blockchain/go-sdk/overlay/lookup"
 
-const overlay = new LookupResolver()
+resolver := lookup.NewLookupResolver()
 
 // find all
-const response2 = await overlay.query({
-    service: 'ls_slackthread',
-    query: {}
+response, err := resolver.Query(ctx, &lookup.LookupQuestion{
+    Service: "ls_slackthread",
+    Query:   map[string]interface{}{},
 }, 10000)
 
 // find by thread hash
-const response = await overlay.query({
-    service: 'ls_slackthread',
-    query: {
-        threadHash: 'some 32 byte hash of a thread'
-    }
+response, err := resolver.Query(ctx, &lookup.LookupQuestion{
+    Service: "ls_slackthread",
+    Query: map[string]interface{}{
+        "threadHash": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    },
 }, 10000)
 
 // find by txid
-const response3 = await overlay.query({
-    service: 'ls_slackthread',
-    query: {
-        txid: 'some txid'
-    }
+response, err := resolver.Query(ctx, &lookup.LookupQuestion{
+    Service: "ls_slackthread",
+    Query: map[string]interface{}{
+        "txid": "some txid",
+    },
 }, 10000)
 ` + "```" + `
 `

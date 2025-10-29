@@ -17,29 +17,27 @@ import (
 )
 
 const lookupDocs = `
-# HelloWorld Lookup Documentation
+# HelloWorld Lookup Service Documentation
 
-Query HelloWorld messages by text search or date range.
+## Overview
+The **HelloWorld Lookup Service** (service ID: ` + "`ls_helloworld`" + `) lets clients search the on-chain *Hello-World* messages that are indexed by the **HelloWorld Topic Manager**. Each record represents a Pay-to-Push-Drop output whose single field is a UTF-8 message of at least two characters.
 
-## Query Parameters
+## Example
+` + "```go" + `
+import "github.com/bsv-blockchain/go-sdk/overlay/lookup"
 
-- **message**: Text to search for (uses full-text search)
-- **limit**: Maximum results to return (default: 50)
-- **skip**: Number of results to skip for pagination (default: 0)
-- **startDate**: Filter by creation date (ISO 8601)
-- **endDate**: Filter by creation date (ISO 8601)
-- **sortOrder**: Sort direction - "asc" or "desc" (default: "desc")
+resolver := lookup.NewLookupResolver()
 
-## Example Query
-
-{
-  "service": "ls_helloworld",
-  "query": {
-    "message": "hello",
-    "limit": 10,
-    "sortOrder": "desc"
-  }
-}
+response, err := resolver.Query(ctx, &lookup.LookupQuestion{
+    Service: "ls_helloworld",
+    Query: map[string]interface{}{
+        "limit":     3,
+        "skip":      0,
+        "sortOrder": "desc",
+        "message":   "Hello Overlay",
+    },
+}, 10000)
+` + "```" + `
 `
 
 // HelloWorldLookupService implements a lookup service for the HelloWorld protocol

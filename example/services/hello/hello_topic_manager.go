@@ -15,15 +15,15 @@ import (
 const topicDocs = `
 # HelloWorld Topic Manager Documentation
 
-A simple messaging protocol using BRC-48 Pay-to-Push-Drop outputs.
+## Overview
+The **HelloWorld Topic Manager** is a lightweight overlay protocol that lets users broadcast a short, UTF‑8 encoded message to the world using BRC‑48 Pay‑to‑Push‑Drop outputs. Each eligible transaction output becomes a permanent, verifiable "shout‑out" on-chain.
 
-## Rules
-
-Each valid output must satisfy the following:
-1. It is a BRC-48 Pay-to-Push-Drop output
-2. The drop contains exactly one field - the UTF-8 message
-3. The message is at least two characters long
-4. The signature inside the drop must verify against the locking public key over the concatenated field data
+| Requirement | Description |
+|-------------|-------------|
+| **Protocol ID** | "HelloWorld" |
+| **Fields** | *Exactly one (the message)* |
+| **Message length** | ≥ 2 UTF‑8 characters |
+| **Signature** | ECDSA over the concatenated field data, verified against the locking public key |
 `
 
 // HelloWorldTopicManager implements a topic manager for the HelloWorld messaging protocol.

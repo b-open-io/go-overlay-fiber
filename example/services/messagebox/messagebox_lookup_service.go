@@ -52,14 +52,27 @@ When a matching output is spent or deleted, the associated advertisement is remo
 
 ### Query Format
 
-` + "```json" + `
-{
-  "service": "ls_messagebox",
-  "query": {
-    "identityKey": "<identity key string>",
-    "host": "<optional host filter>"
-  }
-}
+` + "```go" + `
+import "github.com/bsv-blockchain/go-sdk/overlay/lookup"
+
+resolver := lookup.NewLookupResolver()
+
+// Find all hosts for an identity key
+response, err := resolver.Query(ctx, &lookup.LookupQuestion{
+    Service: "ls_messagebox",
+    Query: map[string]interface{}{
+        "identityKey": "02abc1234567890def1234567890abc1234567890def1234567890abc1234567890",
+    },
+}, 10000)
+
+// Find specific host for an identity key
+response, err := resolver.Query(ctx, &lookup.LookupQuestion{
+    Service: "ls_messagebox",
+    Query: map[string]interface{}{
+        "identityKey": "02abc1234567890def1234567890abc1234567890def1234567890abc1234567890",
+        "host":        "https://alice-messagebox.example.com",
+    },
+}, 10000)
 ` + "```" + `
 
 ### Response Format
