@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/any"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/did"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/hello"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/messagebox"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/slackthreads"
@@ -52,6 +53,10 @@ func main() {
 	// Any
 	overlayServer.ConfigureTopicManager("tm_anytx", any.NewAnyTopicManager())
 	overlayServer.ConfigureLookupService("ls_anytx", any.NewAnyLookupService(overlayServer.MongoDB))
+
+	// DID
+	overlayServer.ConfigureTopicManager("tm_did", did.NewDIDTopicManager())
+	overlayServer.ConfigureLookupService("ls_did", did.NewDIDLookupService(overlayServer.MongoDB))
 
 	// HelloWorld
 	overlayServer.ConfigureTopicManager("tm_helloworld", hello.NewHelloWorldTopicManager())

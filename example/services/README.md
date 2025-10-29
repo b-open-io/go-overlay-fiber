@@ -15,6 +15,17 @@ The simplest possible overlay service that admits all transaction outputs with n
 
 See [any/README.md](./any/README.md) for details.
 
+### DID Service (`did/`)
+
+A protocol for storing decentralized identifier (DID) serial numbers on-chain using BRC-48 PushDrop encoding.
+
+- **Topic Manager**: `tm_did` - Validates PushDrop DID serial numbers
+- **Lookup Service**: `ls_did` - Query by serial number or outpoint
+- **Complexity**: Very Low
+- **Use Case**: DID resolution, certificate serial number storage, identity references
+
+See [did/README.md](./did/README.md) for details.
+
 ### HelloWorld Service (`hello/`)
 
 A messaging protocol using BRC-48 Pay-to-Push-Drop outputs for broadcasting UTF-8 messages.
@@ -98,7 +109,6 @@ These services are ports of the examples from [overlay-express-examples](https:/
 
 Additional services to be ported:
 
-- **DID** - Decentralized Identifiers
 - **UMP** - Universal Messaging Protocol
 - **ProtoMap** - Protocol metadata registration
 - **BasketMap** - Basket type registration
