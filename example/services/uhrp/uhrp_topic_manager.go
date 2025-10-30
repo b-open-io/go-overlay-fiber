@@ -9,10 +9,11 @@ import (
 	"net/url"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/overlay"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/template/pushdrop"
+	"github.com/bsv-blockchain/go-sdk/wallet"
 )
 
 const topicDocs = `
@@ -65,10 +66,10 @@ func (tm *UHRPTopicManager) IdentifyAdmissibleOutputs(
 	// Inspect every output
 	for index, output := range tx.Outputs {
 		if err := tm.validateOutput(output, index); err == nil {
-			slog.Info("UHRP output passed validation", "index", index)
+			slog.Info("UHRP output passed validation", "tx", tx.TxID(), "index", index)
 			outputsToAdmit = append(outputsToAdmit, uint32(index))
 		} else {
-			slog.Debug("UHRP output failed validation", "index", index, "error", err)
+			slog.Error("UHRP output failed validation", "tx", tx.TxID(), "index", index, "error", err)
 		}
 	}
 
@@ -160,10 +161,10 @@ func (tm *UHRPTopicManager) validateOutput(output *transaction.TransactionOutput
 	return nil
 }
 
-// verifySignature verifies the UHRP advertisement signature
+// verifySignature verifies the UHRP advertisement signature using BRC-48
 func (tm *UHRPTopicManager) verifySignature(identityKeyBytes []byte, dataFields [][]byte, signatureBytes []byte) error {
 	// Parse identity key as public key
-	pubKey, err := ec.ParsePubKey(identityKeyBytes)
+	identityPubKey, err := ec.ParsePubKey(identityKeyBytes)
 	if err != nil {
 		return fmt.Errorf("invalid identity key: %w", err)
 	}
@@ -180,9 +181,43 @@ func (tm *UHRPTopicManager) verifySignature(identityKeyBytes []byte, dataFields 
 		return fmt.Errorf("invalid signature format: %w", err)
 	}
 
-	// Verify signature
-	if !sig.Verify(data.Bytes(), pubKey) {
-		return fmt.Errorf("signature does not match identity key")
+	// Create "anyone" wallet for BRC-48 verification
+	anyoneWallet, err := wallet.NewProtoWallet(wallet.ProtoWalletArgs{
+		Type: wallet.ProtoWalletArgsTypeAnyone,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create anyone wallet: %w", err)
+	}
+
+	// Verify signature using BRC-48 protocol
+	// Protocol ID matches TypeScript: [2, 'uhrp advertisement']
+	verifyArgs := wallet.VerifySignatureArgs{
+		EncryptionArgs: wallet.EncryptionArgs{
+			ProtocolID: wallet.Protocol{
+				SecurityLevel: 2,
+				Protocol:      "uhrp advertisement",
+			},
+			KeyID: "1",
+			Counterparty: wallet.Counterparty{
+				Type:         wallet.CounterpartyTypeOther,
+				Counterparty: identityPubKey,
+			},
+		},
+		Data:      data.Bytes(),
+		Signature: sig,
+	}
+
+	result, err := anyoneWallet.VerifySignature(
+		context.Background(),
+		verifyArgs,
+		"",
+	)
+	if err != nil {
+		return fmt.Errorf("signature verification error: %w", err)
+	}
+
+	if !result.Valid {
+		return fmt.Errorf("signature does not match identity key via BRC-48")
 	}
 
 	return nil
