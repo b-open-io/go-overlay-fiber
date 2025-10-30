@@ -92,6 +92,17 @@ Protocol Registry - A protocol for storing protocol metadata and enabling UX enr
 
 See [protomap/README.md](./protomap/README.md) for details.
 
+### BasketMap Service (`basketmap/`)
+
+Basket Registry - A protocol for storing basket type metadata and enabling UX enrichment for BSV applications.
+
+- **Topic Manager**: `tm_basketmap` - Validates PushDrop basket registrations with 7 fields
+- **Lookup Service**: `ls_basketmap` - Query by basket ID or name (fuzzy search) with registry operators
+- **Complexity**: Medium
+- **Use Case**: Basket discovery, UX enrichment, registry management, application integration
+
+See [basketmap/README.md](./basketmap/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -131,7 +142,6 @@ These services are ports of the examples from [overlay-express-examples](https:/
 
 Additional services to be ported:
 
-- **BasketMap** - Basket type registration
 - **CertMap** - Certificate type mapping
 
 Contributions welcome!

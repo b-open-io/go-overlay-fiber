@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/any"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/basketmap"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/did"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/hello"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/messagebox"
@@ -83,6 +84,10 @@ func main() {
 	// ProtoMap
 	overlayServer.ConfigureTopicManager("tm_protomap", protomap.NewProtoMapTopicManager())
 	overlayServer.ConfigureLookupService("ls_protomap", protomap.NewProtoMapLookupService(overlayServer.MongoDB))
+
+	// BasketMap
+	overlayServer.ConfigureTopicManager("tm_basketmap", basketmap.NewBasketMapTopicManager())
+	overlayServer.ConfigureLookupService("ls_basketmap", basketmap.NewBasketMapLookupService(overlayServer.MongoDB))
 
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)
