@@ -8,6 +8,7 @@ import (
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/did"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/hello"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/messagebox"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/protomap"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/slackthreads"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/uhrp"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/ump"
@@ -78,6 +79,10 @@ func main() {
 	// UMP
 	overlayServer.ConfigureTopicManager("tm_users", ump.NewUMPTopicManager())
 	overlayServer.ConfigureLookupService("ls_users", ump.NewUMPLookupService(overlayServer.MongoDB))
+
+	// ProtoMap
+	overlayServer.ConfigureTopicManager("tm_protomap", protomap.NewProtoMapTopicManager())
+	overlayServer.ConfigureLookupService("ls_protomap", protomap.NewProtoMapLookupService(overlayServer.MongoDB))
 
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)

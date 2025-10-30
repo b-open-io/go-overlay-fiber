@@ -81,6 +81,17 @@ User Management Protocol - A protocol for managing CWI-style wallet account desc
 
 See [ump/README.md](./ump/README.md) for details.
 
+### ProtoMap Service (`protomap/`)
+
+Protocol Registry - A protocol for storing protocol metadata and enabling UX enrichment for BSV applications.
+
+- **Topic Manager**: `tm_protomap` - Validates PushDrop protocol registrations with 7 fields
+- **Lookup Service**: `ls_protomap` - Query by protocol name or protocolID with registry operators
+- **Complexity**: Medium
+- **Use Case**: Protocol discovery, UX enrichment, registry management, application integration
+
+See [protomap/README.md](./protomap/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -120,7 +131,6 @@ These services are ports of the examples from [overlay-express-examples](https:/
 
 Additional services to be ported:
 
-- **ProtoMap** - Protocol metadata registration
 - **BasketMap** - Basket type registration
 - **CertMap** - Certificate type mapping
 
