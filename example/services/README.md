@@ -103,6 +103,17 @@ Basket Registry - A protocol for storing basket type metadata and enabling UX en
 
 See [basketmap/README.md](./basketmap/README.md) for details.
 
+### Identity Service (`identity/`)
+
+A protocol for managing BRC-48 identity certificates on-chain, enabling decentralized identity resolution and verification.
+
+- **Topic Manager**: `tm_identity` - Validates BRC-48 VerifiableCertificate structure
+- **Lookup Service**: `ls_identity` - Query by serial number, attributes, identity key, certificate type, or certifiers (with fuzzy search)
+- **Complexity**: Medium-High
+- **Use Case**: Identity certificate management, attribute-based discovery, certificate verification, decentralized identity
+
+See [identity/README.md](./identity/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -143,5 +154,6 @@ These services are ports of the examples from [overlay-express-examples](https:/
 Additional services to be ported:
 
 - **CertMap** - Certificate type mapping
+- **TokenMap** - Token type mapping
 
 Contributions welcome!
