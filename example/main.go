@@ -9,6 +9,7 @@ import (
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/basketmap"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/certmap"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/did"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/fractionalize"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/hello"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/identity"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/messagebox"
@@ -103,6 +104,10 @@ func main() {
 	// CertMap
 	overlayServer.ConfigureTopicManager("tm_certmap", certmap.NewCertMapTopicManager())
 	overlayServer.ConfigureLookupService("ls_certmap", certmap.NewCertMapLookupService(overlayServer.MongoDB))
+
+	// Fractionalize
+	overlayServer.ConfigureTopicManager("tm_fractionalize", fractionalize.NewFractionalizeTopicManager())
+	overlayServer.ConfigureLookupService("ls_fractionalize", fractionalize.NewFractionalizeLookupService(overlayServer.MongoDB))
 
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)

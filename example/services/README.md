@@ -136,6 +136,17 @@ A protocol for registering certificate types on-chain, enabling decentralized ce
 
 See [certmap/README.md](./certmap/README.md) for details.
 
+### Fractionalize Service (`fractionalize/`)
+
+A proof-of-concept protocol for fractionalized ownership using BSV-20 style ordinal tokens with specialized locking mechanisms.
+
+- **Topic Manager**: `tm_fractionalize` - Validates three output types: server tokens (ordinal+multisig), transfer tokens (ordinal only), and payment outputs (multisig only)
+- **Lookup Service**: `ls_fractionalize` - Query by txid or date range with pagination and sorting
+- **Complexity**: Medium-High
+- **Use Case**: Fractionalized ownership PoC, BSV-20 token validation, ordinal inscription with custom locking, multi-pattern script validation
+
+See [fractionalize/README.md](./fractionalize/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
