@@ -15,6 +15,7 @@ import (
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/messagebox"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/protomap"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/slackthreads"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/supplychain"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/uhrp"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/ump"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/walletconfig"
@@ -113,6 +114,10 @@ func main() {
 	// WalletConfig
 	overlayServer.ConfigureTopicManager("tm_walletconfig", walletconfig.NewWalletConfigTopicManager())
 	overlayServer.ConfigureLookupService("ls_walletconfig", walletconfig.NewWalletConfigLookupService(overlayServer.MongoDB))
+
+	// SupplyChain
+	overlayServer.ConfigureTopicManager("tm_supplychain", supplychain.NewSupplyChainTopicManager())
+	overlayServer.ConfigureLookupService("ls_supplychain", supplychain.NewSupplyChainLookupService(overlayServer.MongoDB))
 
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)

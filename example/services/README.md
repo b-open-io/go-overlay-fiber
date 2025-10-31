@@ -158,6 +158,17 @@ A protocol for registering wallet configuration options on-chain, enabling decen
 
 See [walletconfig/README.md](./walletconfig/README.md) for details.
 
+### SupplyChain Service (`supplychain/`)
+
+A protocol for supply chain tracking using simple PushDrop-like scripts with off-chain metadata storage.
+
+- **Topic Manager**: `tm_supplychain` - Validates PushDrop-like script pattern (5 chunks: data, data, OP_2DROP, pubkey, OP_CHECKSIG)
+- **Lookup Service**: `ls_supplychain` - Query by txid, chainId, or date range with pagination and sorting
+- **Complexity**: Low-Medium
+- **Use Case**: Supply chain tracking, file integrity tracking, document provenance, multi-item tracking with off-chain metadata
+
+See [supplychain/README.md](./supplychain/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -199,6 +210,5 @@ Additional services to be ported:
 
 - **TokenMap** - Token type mapping
 - **DesktopIntegrity** - Desktop application integrity verification
-- **SupplyChain** - Supply chain tracking
 
 Contributions welcome!
