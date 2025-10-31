@@ -105,26 +105,22 @@ func (ls *SupplyChainLookupService) OutputAdmittedByTopic(ctx context.Context, o
 
 	slog.Debug("SupplyChain lookup service outputAdded", "txid", output.Outpoint.Txid.String(), "outputIndex", output.Outpoint.Index)
 
-	// TODO: Off-chain values support needs to be added to the engine.OutputAdmittedByTopic struct
-	// TaggedBEEF has OffChainValues []byte, but it's not being propagated to OutputAdmittedByTopic
-	// The engine needs to be updated to include:
-	//   OffChainValues []byte
-	// in the OutputAdmittedByTopic structure so lookup services can access the off-chain data
-	//
-	// Once implemented, this code should be:
-	//   var offChainValuesObject map[string]interface{}
-	//   if err := json.Unmarshal(output.OffChainValues, &offChainValuesObject); err != nil {
-	//       return fmt.Errorf("failed to parse off-chain values JSON: %w", err)
-	//   }
-	//   if _, ok := offChainValuesObject["chainId"]; !ok {
-	//       return fmt.Errorf("missing chainId in off-chain values")
-	//   }
-	//
-	// For now, we'll create a placeholder record with just the chainId derived from the txid
+	// Parse off-chain values from the output
+	var offChainValuesObject map[string]interface{}
+	if len(output.OffChainValues) > 0 {
+		if err := json.Unmarshal(output.OffChainValues, &offChainValuesObject); err != nil {
+			return fmt.Errorf("failed to parse off-chain values JSON: %w", err)
+		}
+	} else {
+		// If no off-chain values provided, create minimal object with txid as chainId
+		offChainValuesObject = map[string]interface{}{
+			"chainId": output.Outpoint.Txid.String(),
+		}
+	}
 
-	// Create a minimal off-chain values object
-	offChainValuesObject := map[string]interface{}{
-		"chainId": output.Outpoint.Txid.String(), // Using txid as chainId temporarily
+	// Verify chainId is present
+	if _, ok := offChainValuesObject["chainId"]; !ok {
+		return fmt.Errorf("missing chainId in off-chain values")
 	}
 
 	slog.Debug("SupplyChain lookup service storing record",
