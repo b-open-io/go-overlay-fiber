@@ -125,6 +125,17 @@ A protocol for publishing Metanet App catalog entries on-chain, enabling decentr
 
 See [apps/README.md](./apps/README.md) for details.
 
+### CertMap Service (`certmap/`)
+
+A protocol for registering certificate types on-chain, enabling decentralized certificate type discovery and standardization.
+
+- **Topic Manager**: `tm_certmap` - Validates certificate type registrations with required fields (type, name, iconURL, description, documentationURL, certFields, registryOperator)
+- **Lookup Service**: `ls_certmap` - Query by type or name (fuzzy search) with registry operators
+- **Complexity**: Medium
+- **Use Case**: Certificate type registry, certificate discovery, registry operator management, certificate standardization
+
+See [certmap/README.md](./certmap/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -164,7 +175,6 @@ These services are ports of the examples from [overlay-express-examples](https:/
 
 Additional services to be ported:
 
-- **CertMap** - Certificate type mapping
 - **TokenMap** - Token type mapping
 
 Contributions welcome!
