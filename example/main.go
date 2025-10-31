@@ -17,6 +17,7 @@ import (
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/slackthreads"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/uhrp"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/ump"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/walletconfig"
 	"github.com/bsv-blockchain/go-overlay-fiber/pkg/server"
 )
 
@@ -108,6 +109,10 @@ func main() {
 	// Fractionalize
 	overlayServer.ConfigureTopicManager("tm_fractionalize", fractionalize.NewFractionalizeTopicManager())
 	overlayServer.ConfigureLookupService("ls_fractionalize", fractionalize.NewFractionalizeLookupService(overlayServer.MongoDB))
+
+	// WalletConfig
+	overlayServer.ConfigureTopicManager("tm_walletconfig", walletconfig.NewWalletConfigTopicManager())
+	overlayServer.ConfigureLookupService("ls_walletconfig", walletconfig.NewWalletConfigLookupService(overlayServer.MongoDB))
 
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)

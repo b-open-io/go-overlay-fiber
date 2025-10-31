@@ -147,6 +147,17 @@ A proof-of-concept protocol for fractionalized ownership using BSV-20 style ordi
 
 See [fractionalize/README.md](./fractionalize/README.md) for details.
 
+### WalletConfig Service (`walletconfig/`)
+
+A protocol for registering wallet configuration options on-chain, enabling decentralized wallet service discovery.
+
+- **Topic Manager**: `tm_walletconfig` - Validates wallet configuration registrations with required fields (configID, name, icon, wab, storage, messagebox, legal, registryOperator)
+- **Lookup Service**: `ls_walletconfig` - Query by configID, name (fuzzy search), WAB URL, storage URL, messagebox URL, or list all with registry operators
+- **Complexity**: Medium
+- **Use Case**: Wallet service discovery, configuration registry, service provider discovery, multi-wallet ecosystem
+
+See [walletconfig/README.md](./walletconfig/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -187,5 +198,7 @@ These services are ports of the examples from [overlay-express-examples](https:/
 Additional services to be ported:
 
 - **TokenMap** - Token type mapping
+- **DesktopIntegrity** - Desktop application integrity verification
+- **SupplyChain** - Supply chain tracking
 
 Contributions welcome!
