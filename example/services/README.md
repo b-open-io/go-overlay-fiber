@@ -114,6 +114,17 @@ A protocol for managing BRC-48 identity certificates on-chain, enabling decentra
 
 See [identity/README.md](./identity/README.md) for details.
 
+### Apps Service (`apps/`)
+
+A protocol for publishing Metanet App catalog entries on-chain, enabling decentralized app discovery and distribution.
+
+- **Topic Manager**: `tm_apps` - Validates app metadata with required fields (version, name, description, icon, domain, publisher, release_date)
+- **Lookup Service**: `ls_apps` - Query by domain, publisher, name (fuzzy), tags, category, outpoint, or browse all (with pagination and sorting)
+- **Complexity**: Medium
+- **Use Case**: App catalog, app discovery, publisher-based distribution, domain-based ecosystems, version management
+
+See [apps/README.md](./apps/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:

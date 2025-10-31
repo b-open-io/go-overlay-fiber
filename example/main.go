@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/any"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/apps"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/basketmap"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/did"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/hello"
@@ -93,6 +94,10 @@ func main() {
 	// Identity
 	overlayServer.ConfigureTopicManager("tm_identity", identity.NewIdentityTopicManager())
 	overlayServer.ConfigureLookupService("ls_identity", identity.NewIdentityLookupService(overlayServer.MongoDB))
+
+	// Apps
+	overlayServer.ConfigureTopicManager("tm_apps", apps.NewAppsTopicManager())
+	overlayServer.ConfigureLookupService("ls_apps", apps.NewAppsLookupService(overlayServer.MongoDB))
 
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)
