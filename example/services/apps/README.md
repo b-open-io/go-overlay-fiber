@@ -55,7 +55,7 @@ The protocol uses BRC-48 signatures with protocol ID `[1, 'metanet apps']` to ve
 - The signature is valid for the claimed publisher identity key
 - The locking public key matches the expected derived child key
 
-Note: Signature verification is pending full wallet infrastructure in go-sdk.
+This ensures that only the actual publisher can create valid app listings for their identity key.
 
 ## Query Types
 
@@ -322,15 +322,14 @@ lockingScript := pushdrop.Encode([][]byte{metadataJSON, signature}, lockingPubli
 - Only latest version remains discoverable
 - Historical versions can be found via blockchain explorers
 
-## Pending Features
+## Future Enhancements
 
-The current implementation includes placeholders for:
+Potential future enhancements include:
 
-1. **BRC-48 Signature Verification**: Verify signatures over metadata using ProtoWallet with protocol `[1, 'metanet apps']`
-2. **Domain Verification**: Off-chain verification of domain ownership
-3. **Content Moderation**: Optional filtering rules for app content
-
-These features require additional infrastructure currently being developed in go-sdk.
+1. **Domain Verification**: Off-chain verification of domain ownership claims
+2. **Content Moderation**: Optional filtering rules for app content
+3. **Rating System**: On-chain or off-chain app rating and review system
+4. **Update Notifications**: GASP-based notifications for app updates
 
 ## TypeScript Equivalent
 

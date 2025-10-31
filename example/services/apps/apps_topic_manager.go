@@ -1,6 +1,7 @@
 package apps
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/overlay"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/template/pushdrop"
+	"github.com/bsv-blockchain/go-sdk/wallet"
 )
 
 const topicDocs = `# Apps Topic Manager Documentation
@@ -28,7 +31,10 @@ _admissible_ as on-chain app listings.
      ` + "`version`" + `, ` + "`name`" + `, ` + "`description`" + `, ` + "`icon`" + `, ` + "`domain`" + `,
      ` + "`publisher`" + `, and ` + "`release_date`" + `.
   4. At least one of **` + "`httpURL`" + `** _or_ **` + "`uhrpURL`" + `** is provided.
-  5. Optional properties—` + "`short_name`" + `, ` + "`category`" + `, ` + "`tags`" + `,
+  5. The BRC-48 signature is valid for the claimed publisher identity key
+     using protocol [1, 'metanet apps'].
+  6. The locking public key matches the expected derived key.
+  7. Optional properties—` + "`short_name`" + `, ` + "`category`" + `, ` + "`tags`" + `,
      ` + "`changelog`" + `, ` + "`banner_image_url`" + `, ` + "`screenshot_urls`" + `—may be
      included but are not validated beyond basic type checks.
 
@@ -131,11 +137,13 @@ func (tm *AppsTopicManager) IdentifyAdmissibleOutputs(
 			continue
 		}
 
-		// TODO: Check signature verification
-		// The TypeScript version uses:
-		// isTokenSignatureCorrectlyLinked(result.lockingPublicKey, metadata.publisher, result.fields)
-		// This requires ProtoWallet.VerifySignature with protocol [1, 'metanet apps']
-		// For now, we skip this check pending full wallet infrastructure in go-sdk
+		// Verify signature
+		if err := tm.verifySignature(result.LockingPublicKey, metadata.Publisher, result.Fields); err != nil {
+			slog.Debug("Signature verification failed", "index", i, "error", err)
+			continue
+		}
+
+		slog.Debug("Apps signature verified", "index", i)
 
 		// Output is valid
 		outputsToAdmit = append(outputsToAdmit, outputIndex)
@@ -164,6 +172,104 @@ func (tm *AppsTopicManager) IdentifyAdmissibleOutputs(
 		OutputsToAdmit: outputsToAdmit,
 		CoinsToRetain:  coinsToRetain,
 	}, nil
+}
+
+// verifySignature verifies the Apps advertisement signature using BRC-48
+func (tm *AppsTopicManager) verifySignature(lockingPublicKey *ec.PublicKey, publisherHex string, fields [][]byte) error {
+	// Parse publisher identity key from hex string
+	publisherKey, err := ec.PublicKeyFromString(publisherHex)
+	if err != nil {
+		return fmt.Errorf("invalid publisher key: %w", err)
+	}
+
+	// The signature is the last field
+	if len(fields) < 2 {
+		return fmt.Errorf("not enough fields for signature verification")
+	}
+	signatureBytes := fields[len(fields)-1]
+	dataFields := fields[:len(fields)-1]
+
+	// Concatenate data fields for signature verification (all except signature)
+	var data bytes.Buffer
+	for _, field := range dataFields {
+		data.Write(field)
+	}
+
+	// Parse signature
+	sig, err := ec.ParseSignature(signatureBytes)
+	if err != nil {
+		return fmt.Errorf("invalid signature format: %w", err)
+	}
+
+	// Create "anyone" wallet for BRC-48 verification
+	anyoneWallet, err := wallet.NewProtoWallet(wallet.ProtoWalletArgs{
+		Type: wallet.ProtoWalletArgsTypeAnyone,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create anyone wallet: %w", err)
+	}
+
+	// Verify signature using BRC-48 protocol
+	// Protocol ID matches TypeScript: [1, 'metanet apps']
+	verifyArgs := wallet.VerifySignatureArgs{
+		EncryptionArgs: wallet.EncryptionArgs{
+			ProtocolID: wallet.Protocol{
+				SecurityLevel: 1,
+				Protocol:      "metanet apps",
+			},
+			KeyID: "1",
+			Counterparty: wallet.Counterparty{
+				Type:         wallet.CounterpartyTypeOther,
+				Counterparty: publisherKey,
+			},
+		},
+		Data:      data.Bytes(),
+		Signature: sig,
+	}
+
+	result, err := anyoneWallet.VerifySignature(
+		context.Background(),
+		verifyArgs,
+		"",
+	)
+	if err != nil {
+		return fmt.Errorf("signature verification error: %w", err)
+	}
+
+	if !result.Valid {
+		return fmt.Errorf("signature does not match publisher key via BRC-48")
+	}
+
+	// Verify the locking public key matches the expected derived key
+	publicKeyArgs := wallet.GetPublicKeyArgs{
+		EncryptionArgs: wallet.EncryptionArgs{
+			ProtocolID: wallet.Protocol{
+				SecurityLevel: 1,
+				Protocol:      "metanet apps",
+			},
+			KeyID: "1",
+			Counterparty: wallet.Counterparty{
+				Type:         wallet.CounterpartyTypeOther,
+				Counterparty: publisherKey,
+			},
+		},
+	}
+
+	derivedKey, err := anyoneWallet.GetPublicKey(
+		context.Background(),
+		publicKeyArgs,
+		"",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to derive expected locking key: %w", err)
+	}
+
+	// Compare locking public keys
+	if lockingPublicKey.ToDERHex() != derivedKey.PublicKey.ToDERHex() {
+		return fmt.Errorf("locking public key does not match expected derived key")
+	}
+
+	return nil
 }
 
 // IdentifyNeededInputs identifies inputs needed for validation (not used for Apps protocol)
