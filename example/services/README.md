@@ -169,6 +169,17 @@ A protocol for supply chain tracking using simple PushDrop-like scripts with off
 
 See [supplychain/README.md](./supplychain/README.md) for details.
 
+### DesktopIntegrity Service (`desktopintegrity/`)
+
+A protocol for desktop application integrity verification using 32-byte file hashes stored on-chain.
+
+- **Topic Manager**: `tm_desktopintegrity` - Validates OP_FALSE OP_RETURN pattern with 32-byte hash
+- **Lookup Service**: `ls_desktopintegrity` - Query by fileHash, txid, or date range with pagination and sorting
+- **Complexity**: Very Low
+- **Use Case**: Desktop application integrity, software distribution, update verification, code signing alternative
+
+See [desktopintegrity/README.md](./desktopintegrity/README.md) for details.
+
 ## Using These Services
 
 These are example implementations meant to demonstrate the patterns for building overlay services. You can:
@@ -209,6 +220,5 @@ These services are ports of the examples from [overlay-express-examples](https:/
 Additional services to be ported:
 
 - **TokenMap** - Token type mapping
-- **DesktopIntegrity** - Desktop application integrity verification
 
 Contributions welcome!

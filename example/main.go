@@ -8,6 +8,7 @@ import (
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/apps"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/basketmap"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/certmap"
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/desktopintegrity"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/did"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/fractionalize"
 	"github.com/bsv-blockchain/go-overlay-fiber/example/services/hello"
@@ -118,6 +119,10 @@ func main() {
 	// SupplyChain
 	overlayServer.ConfigureTopicManager("tm_supplychain", supplychain.NewSupplyChainTopicManager())
 	overlayServer.ConfigureLookupService("ls_supplychain", supplychain.NewSupplyChainLookupService(overlayServer.MongoDB))
+
+	// DesktopIntegrity
+	overlayServer.ConfigureTopicManager("tm_desktopintegrity", desktopintegrity.NewDesktopIntegrityTopicManager())
+	overlayServer.ConfigureLookupService("ls_desktopintegrity", desktopintegrity.NewDesktopIntegrityLookupService(overlayServer.MongoDB))
 
 	// Enable GASP sync for testing
 	overlayServer.ConfigureGASPSync(true)
