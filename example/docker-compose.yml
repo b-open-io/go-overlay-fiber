@@ -38,8 +38,8 @@ services:
 
   app:
     build:
-      context: ..
-      dockerfile: example/Dockerfile
+      context: ../..
+      dockerfile: go-overlay-fiber/example/Dockerfile
     container_name: go-overlay-example-app
     depends_on:
       mongo:
