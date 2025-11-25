@@ -53,7 +53,7 @@ var _ engine.TopicManager = (*SupplyChainTopicManager)(nil)
 func (tm *SupplyChainTopicManager) IdentifyAdmissibleOutputs(
 	ctx context.Context,
 	beef []byte,
-	previousCoins map[uint32]*transaction.TransactionOutput,
+	previousCoins []uint32,
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 

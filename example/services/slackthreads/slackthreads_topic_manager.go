@@ -31,7 +31,7 @@ func NewSlackThreadsTopicManager() *SlackThreadsTopicManager {
 func (tm *SlackThreadsTopicManager) IdentifyAdmissibleOutputs(
 	ctx context.Context,
 	beef []byte,
-	previousCoins map[uint32]*transaction.TransactionOutput,
+	previousCoins []uint32,
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 

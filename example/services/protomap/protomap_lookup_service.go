@@ -100,8 +100,20 @@ func (ls *ProtoMapLookupService) OutputAdmittedByTopic(ctx context.Context, outp
 		return nil
 	}
 
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[output.OutputIndex].LockingScript
+
 	// Decode the ProtoMap fields from the locking script
-	result := pushdrop.Decode(output.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil {
 		return fmt.Errorf("failed to decode PushDrop from locking script")
 	}
@@ -147,13 +159,13 @@ func (ls *ProtoMapLookupService) OutputAdmittedByTopic(ctx context.Context, outp
 	}
 
 	// Store protocol registration
-	if err := ls.storage.StoreRecord(ctx, output.Outpoint.Txid.String(), int(output.Outpoint.Index), registration); err != nil {
+	if err := ls.storage.StoreRecord(ctx, txid, outputIndex, registration); err != nil {
 		return fmt.Errorf("failed to store ProtoMap record: %w", err)
 	}
 
 	slog.Debug("ProtoMap token admitted",
-		"txid", output.Outpoint.Txid.String(),
-		"outputIndex", output.Outpoint.Index,
+		"txid", txid,
+		"outputIndex", outputIndex,
 		"name", registration.Name,
 		"protocol", registration.ProtocolID.Protocol)
 

@@ -94,10 +94,19 @@ func (ls *FractionalizeLookupService) OutputAdmittedByTopic(ctx context.Context,
 		return nil
 	}
 
-	slog.Debug("Fractionalize lookup service outputAdded", "txid", output.Outpoint.Txid.String(), "outputIndex", output.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	slog.Debug("Fractionalize lookup service outputAdded", "txid", txid, "outputIndex", outputIndex)
 
 	// Store Fractionalize record
-	if err := ls.storage.StoreRecord(ctx, output.Outpoint.Txid.String(), int(output.Outpoint.Index)); err != nil {
+	if err := ls.storage.StoreRecord(ctx, txid, outputIndex); err != nil {
 		return fmt.Errorf("failed to store Fractionalize record: %w", err)
 	}
 

@@ -112,10 +112,22 @@ func (ls *AppsLookupService) OutputAdmittedByTopic(ctx context.Context, output *
 		return nil
 	}
 
-	slog.Debug("Apps lookup service outputAdded", "txid", output.Outpoint.Txid.String(), "outputIndex", output.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	slog.Debug("Apps lookup service outputAdded", "txid", txid, "outputIndex", outputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[output.OutputIndex].LockingScript
 
 	// Decode the Apps token fields from the locking script
-	result := pushdrop.Decode(output.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil {
 		return fmt.Errorf("failed to decode PushDrop from locking script")
 	}
@@ -144,13 +156,13 @@ func (ls *AppsLookupService) OutputAdmittedByTopic(ctx context.Context, output *
 	}
 
 	slog.Debug("Apps lookup service storing record",
-		"txid", output.Outpoint.Txid.String(),
-		"outputIndex", output.Outpoint.Index,
+		"txid", txid,
+		"outputIndex", outputIndex,
 		"name", metadata.Name,
 		"domain", metadata.Domain)
 
 	// Store Apps catalog record
-	if err := ls.storage.StoreRecord(ctx, output.Outpoint.Txid.String(), int(output.Outpoint.Index), &metadata); err != nil {
+	if err := ls.storage.StoreRecord(ctx, txid, outputIndex, &metadata); err != nil {
 		return fmt.Errorf("failed to store Apps catalog record: %w", err)
 	}
 

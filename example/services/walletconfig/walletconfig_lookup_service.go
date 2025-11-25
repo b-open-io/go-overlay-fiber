@@ -102,10 +102,22 @@ func (ls *WalletConfigLookupService) OutputAdmittedByTopic(ctx context.Context, 
 		return nil
 	}
 
-	slog.Debug("WalletConfig lookup service outputAdded", "txid", output.Outpoint.Txid.String(), "outputIndex", output.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	slog.Debug("WalletConfig lookup service outputAdded", "txid", txid, "outputIndex", outputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[output.OutputIndex].LockingScript
 
 	// Decode the WalletConfig token fields from the locking script
-	result := pushdrop.Decode(output.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil {
 		return fmt.Errorf("failed to decode PushDrop from locking script")
 	}
@@ -143,13 +155,13 @@ func (ls *WalletConfigLookupService) OutputAdmittedByTopic(ctx context.Context, 
 	}
 
 	slog.Debug("WalletConfig lookup service storing record",
-		"txid", output.Outpoint.Txid.String(),
-		"outputIndex", output.Outpoint.Index,
+		"txid", txid,
+		"outputIndex", outputIndex,
 		"configID", configID,
 		"name", name)
 
 	// Store WalletConfig record (with duplicate check)
-	if err := ls.storage.StoreRecord(ctx, output.Outpoint.Txid.String(), int(output.Outpoint.Index), registration); err != nil {
+	if err := ls.storage.StoreRecord(ctx, txid, outputIndex, registration); err != nil {
 		return fmt.Errorf("failed to store WalletConfig record: %w", err)
 	}
 

@@ -12,7 +12,7 @@ import (
 // TestOverlayIntegration tests that the overlay components can be created and integrated
 func TestOverlayIntegration(t *testing.T) {
 	// Test BEEF storage creation
-	beefStorage, err := beef.CreateBeefStorage("")
+	beefStorage, err := beef.NewStorage("", nil)
 	if err != nil {
 		t.Fatalf("Failed to create BEEF storage: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestOverlayStorageCreation(t *testing.T) {
 	// This test specifically tests our adapter without the engine dependency
 
 	// Test BEEF storage creation with default path
-	beefStorage, err := beef.CreateBeefStorage("./test_beef_storage")
+	beefStorage, err := beef.NewStorage("./test_beef_storage", nil)
 	if err != nil {
 		t.Fatalf("Failed to create BEEF storage: %v", err)
 	}

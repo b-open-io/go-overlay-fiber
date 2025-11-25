@@ -51,7 +51,7 @@ var _ engine.TopicManager = (*WalletConfigTopicManager)(nil)
 func (tm *WalletConfigTopicManager) IdentifyAdmissibleOutputs(
 	ctx context.Context,
 	beef []byte,
-	previousCoins map[uint32]*transaction.TransactionOutput,
+	previousCoins []uint32,
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 	coinsToRetain := []uint32{}
@@ -148,7 +148,7 @@ func (tm *WalletConfigTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	// Retain all previous coins
-	for vin := range previousCoins {
+	for _, vin := range previousCoins {
 		coinsToRetain = append(coinsToRetain, vin)
 	}
 

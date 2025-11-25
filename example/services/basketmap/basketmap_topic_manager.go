@@ -56,7 +56,7 @@ var _ engine.TopicManager = (*BasketMapTopicManager)(nil)
 func (tm *BasketMapTopicManager) IdentifyAdmissibleOutputs(
 	ctx context.Context,
 	beef []byte,
-	previousCoins map[uint32]*transaction.TransactionOutput,
+	previousCoins []uint32,
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 	coinsToRetain := []uint32{}
@@ -146,7 +146,7 @@ func (tm *BasketMapTopicManager) IdentifyAdmissibleOutputs(
 	}
 
 	// Retain all previous coins
-	for vin := range previousCoins {
+	for _, vin := range previousCoins {
 		coinsToRetain = append(coinsToRetain, vin)
 	}
 

@@ -115,10 +115,22 @@ func (ls *IdentityLookupService) OutputAdmittedByTopic(ctx context.Context, outp
 		return nil
 	}
 
-	slog.Debug("Identity lookup service outputAdded", "txid", output.Outpoint.Txid.String(), "outputIndex", output.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	slog.Debug("Identity lookup service outputAdded", "txid", txid, "outputIndex", outputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[output.OutputIndex].LockingScript
 
 	// Decode the Identity fields from the locking script
-	result := pushdrop.Decode(output.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil {
 		return fmt.Errorf("failed to decode PushDrop from locking script")
 	}
@@ -157,13 +169,13 @@ func (ls *IdentityLookupService) OutputAdmittedByTopic(ctx context.Context, outp
 	}
 
 	slog.Debug("Identity lookup service storing record",
-		"txid", output.Outpoint.Txid.String(),
-		"outputIndex", output.Outpoint.Index,
+		"txid", txid,
+		"outputIndex", outputIndex,
 		"subject", verifiableCert.Subject.ToDERHex(),
 		"certifier", verifiableCert.Certifier.ToDERHex())
 
 	// Store identity certificate
-	if err := ls.storage.StoreRecord(ctx, output.Outpoint.Txid.String(), int(output.Outpoint.Index), &verifiableCert.Certificate); err != nil {
+	if err := ls.storage.StoreRecord(ctx, txid, outputIndex, &verifiableCert.Certificate); err != nil {
 		return fmt.Errorf("failed to store Identity record: %w", err)
 	}
 

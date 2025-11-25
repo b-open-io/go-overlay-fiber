@@ -103,7 +103,16 @@ func (ls *SupplyChainLookupService) OutputAdmittedByTopic(ctx context.Context, o
 		return nil
 	}
 
-	slog.Debug("SupplyChain lookup service outputAdded", "txid", output.Outpoint.Txid.String(), "outputIndex", output.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	slog.Debug("SupplyChain lookup service outputAdded", "txid", txid, "outputIndex", outputIndex)
 
 	// Parse off-chain values from the output
 	var offChainValuesObject map[string]interface{}
@@ -114,7 +123,7 @@ func (ls *SupplyChainLookupService) OutputAdmittedByTopic(ctx context.Context, o
 	} else {
 		// If no off-chain values provided, create minimal object with txid as chainId
 		offChainValuesObject = map[string]interface{}{
-			"chainId": output.Outpoint.Txid.String(),
+			"chainId": txid,
 		}
 	}
 
@@ -124,12 +133,12 @@ func (ls *SupplyChainLookupService) OutputAdmittedByTopic(ctx context.Context, o
 	}
 
 	slog.Debug("SupplyChain lookup service storing record",
-		"txid", output.Outpoint.Txid.String(),
-		"outputIndex", output.Outpoint.Index,
+		"txid", txid,
+		"outputIndex", outputIndex,
 		"chainId", offChainValuesObject["chainId"])
 
 	// Store SupplyChain record
-	if err := ls.storage.StoreRecord(ctx, output.Outpoint.Txid.String(), int(output.Outpoint.Index), offChainValuesObject); err != nil {
+	if err := ls.storage.StoreRecord(ctx, txid, outputIndex, offChainValuesObject); err != nil {
 		return fmt.Errorf("failed to store SupplyChain record: %w", err)
 	}
 

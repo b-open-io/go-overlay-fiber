@@ -61,7 +61,7 @@ var _ engine.TopicManager = (*FractionalizeTopicManager)(nil)
 func (tm *FractionalizeTopicManager) IdentifyAdmissibleOutputs(
 	ctx context.Context,
 	beef []byte,
-	previousCoins map[uint32]*transaction.TransactionOutput,
+	previousCoins []uint32,
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 

@@ -98,8 +98,20 @@ func (ls *BasketMapLookupService) OutputAdmittedByTopic(ctx context.Context, out
 		return nil
 	}
 
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[output.OutputIndex].LockingScript
+
 	// Decode the BasketMap fields from the locking script
-	result := pushdrop.Decode(output.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil {
 		return fmt.Errorf("failed to decode PushDrop from locking script")
 	}
@@ -122,13 +134,13 @@ func (ls *BasketMapLookupService) OutputAdmittedByTopic(ctx context.Context, out
 	}
 
 	// Store basket registration
-	if err := ls.storage.StoreRecord(ctx, output.Outpoint.Txid.String(), int(output.Outpoint.Index), registration); err != nil {
+	if err := ls.storage.StoreRecord(ctx, txid, outputIndex, registration); err != nil {
 		return fmt.Errorf("failed to store BasketMap record: %w", err)
 	}
 
 	slog.Debug("BasketMap token admitted",
-		"txid", output.Outpoint.Txid.String(),
-		"outputIndex", output.Outpoint.Index,
+		"txid", txid,
+		"outputIndex", outputIndex,
 		"basketID", registration.BasketID,
 		"name", registration.Name)
 

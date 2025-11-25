@@ -41,7 +41,7 @@ var _ engine.TopicManager = (*UHRPTopicManager)(nil)
 func (tm *UHRPTopicManager) IdentifyAdmissibleOutputs(
 	ctx context.Context,
 	beef []byte,
-	previousCoins map[uint32]*transaction.TransactionOutput,
+	previousCoins []uint32,
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 
@@ -75,7 +75,7 @@ func (tm *UHRPTopicManager) IdentifyAdmissibleOutputs(
 
 	// UHRP protocol retains previous coins
 	coinsToRetain := []uint32{}
-	for key := range previousCoins {
+	for _, key := range previousCoins {
 		coinsToRetain = append(coinsToRetain, key)
 	}
 
