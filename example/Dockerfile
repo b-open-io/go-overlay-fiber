@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Install build dependencies for CGO (required for SQLite)
 RUN apk add --no-cache gcc musl-dev sqlite-dev
@@ -7,8 +7,9 @@ RUN apk add --no-cache gcc musl-dev sqlite-dev
 # Set working directory
 WORKDIR /build
 
-# Copy go-sdk dependency
+# Copy dependencies
 COPY go-sdk ./go-sdk
+COPY go-overlay-services ./go-overlay-services
 
 # Copy go-overlay-fiber
 COPY go-overlay-fiber ./go-overlay-fiber

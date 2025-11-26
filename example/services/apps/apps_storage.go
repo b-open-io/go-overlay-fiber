@@ -23,11 +23,11 @@ func NewAppsStorage(db *mongo.Database) *AppsStorage {
 
 	// Create text index on searchable fields for full-text search
 	indexModel := mongo.IndexModel{
-		Keys: bson.M{
-			"metadata.name":        "text",
-			"metadata.description": "text",
-			"metadata.tags":        "text",
-			"metadata.domain":      "text",
+		Keys: bson.D{
+			{Key: "metadata.name", Value: "text"},
+			{Key: "metadata.description", Value: "text"},
+			{Key: "metadata.tags", Value: "text"},
+			{Key: "metadata.domain", Value: "text"},
 		},
 	}
 	_, err := collection.Indexes().CreateOne(context.Background(), indexModel)
