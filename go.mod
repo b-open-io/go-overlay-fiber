@@ -6,10 +6,10 @@ require (
 	github.com/b-open-io/overlay v0.0.0-20250811192015-2902186637c8
 	github.com/bsv-blockchain/go-overlay-discovery-services v0.0.0-00010101000000-000000000000
 	github.com/bsv-blockchain/go-overlay-services v1.2.0
-	github.com/bsv-blockchain/go-sdk v1.2.12
+	github.com/bsv-blockchain/go-sdk v1.2.13
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/gofiber/contrib/websocket v1.3.2
-	github.com/gofiber/fiber/v2 v2.52.9
+	github.com/gofiber/fiber/v2 v2.52.10
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.32
@@ -57,7 +57,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-co-op/gocron-gorm-lock/v2 v2.1.0 // indirect
 	github.com/go-co-op/gocron/v2 v2.17.0 // indirect
-	github.com/go-resty/resty/v2 v2.16.5 // indirect
+	github.com/go-resty/resty/v2 v2.17.0 // indirect
 	github.com/go-softwarelab/common v1.8.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -67,7 +67,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/ipfs/go-cid v0.6.0 // indirect
-	github.com/ipfs/go-log/v2 v2.8.2 // indirect
+	github.com/ipfs/go-log/v2 v2.9.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.7.6 // indirect
@@ -76,7 +76,7 @@ require (
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
+	github.com/joho/godotenv v1.6.0-pre.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/klauspost/compress v1.18.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
@@ -137,7 +137,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.67.2 // indirect
+	github.com/prometheus/common v0.67.4 // indirect
 	github.com/prometheus/procfs v0.19.2 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.55.0 // indirect
@@ -165,19 +165,19 @@ require (
 	go.uber.org/fx v1.24.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
+	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.44.0 // indirect
-	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
-	golang.org/x/mod v0.29.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
+	golang.org/x/exp v0.0.0-20251125195548-87e1e737ad39 // indirect
+	golang.org/x/mod v0.30.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/telemetry v0.0.0-20251028164327-d7a2859f34e8 // indirect
+	golang.org/x/telemetry v0.0.0-20251111182119-bc8e575c7b54 // indirect
 	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	golang.org/x/tools v0.38.0 // indirect
+	golang.org/x/tools v0.39.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -194,8 +194,8 @@ require (
 
 replace github.com/bsv-blockchain/go-overlay-discovery-services => github.com/b-open-io/go-overlay-discovery-services v0.0.0-20251125205927-08603fdfb390
 
-replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251125225334-c71f1211303f
+replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251207133515-104accd1e588
 
-replace github.com/bsv-blockchain/go-overlay-services => ../go-overlay-services
+replace github.com/bsv-blockchain/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.1-0.20251207122223-a4c7a4d0ad3e
 
-replace github.com/bsv-blockchain/go-sdk => ../go-sdk
+replace github.com/bsv-blockchain/go-sdk => github.com/b-open-io/go-sdk v1.1.25-0.20251114212140-f82af71fe22f
