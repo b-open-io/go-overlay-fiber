@@ -59,8 +59,8 @@ github.com/b-open-io/go-overlay-discovery-services v0.0.0-20251125205927-08603fd
 github.com/b-open-io/go-overlay-discovery-services v0.0.0-20251125205927-08603fdfb390/go.mod h1:di9HCPYsr0ntArE4siV7gP+9rOeU9eaE+rTUJad5+gM=
 github.com/b-open-io/go-overlay-services v0.0.1-0.20251207122223-a4c7a4d0ad3e h1:9RuFO3fliIZQybEDvABMcu6yRUhTHrjR1yF5mOmSU4Y=
 github.com/b-open-io/go-overlay-services v0.0.1-0.20251207122223-a4c7a4d0ad3e/go.mod h1:YMCKf7Z3wpK5F8igUXhwN0D/Y+vzIRqOrgS8Se3pB6o=
-github.com/b-open-io/go-sdk v1.1.25-0.20251114212140-f82af71fe22f h1:qhd0iXr167HvGnI59ynommaZbESuDmKWkGylrfD1A6Y=
-github.com/b-open-io/go-sdk v1.1.25-0.20251114212140-f82af71fe22f/go.mod h1:1FWCWH+x6xc1kH9r6tuyRQqUomfrLBOQfdPesJZK/1k=
+github.com/b-open-io/go-sdk v1.1.25-0.20251208190302-0faf19402274 h1:2vXI7Au/fRusOcjkMY1i78yXVryzAdAgxypyjwQhJ6o=
+github.com/b-open-io/go-sdk v1.1.25-0.20251208190302-0faf19402274/go.mod h1:HugEqK6K46nUAN0Xr9xq0HW8QHtpJmAg05NmcxPc1Lk=
 github.com/b-open-io/overlay v0.3.1-0.20251207133515-104accd1e588 h1:sY7RIT1VwcxLKDJ8O0vM6Mh+FHfpE9QiXRJNtYFgH/o=
 github.com/b-open-io/overlay v0.3.1-0.20251207133515-104accd1e588/go.mod h1:CLoNpwtWBJhFglAFrsrjbnEIofOktdIAJ6ddLl7SVT8=
 github.com/benbjohnson/clock v1.3.5 h1:VvXlSJBzZpA/zum6Sj74hxwYI2DIxRWuNIoXAzHZz5o=
