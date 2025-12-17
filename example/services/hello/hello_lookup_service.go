@@ -61,11 +61,20 @@ func (ls *HelloWorldLookupService) OutputAdmittedByTopic(ctx context.Context, pa
 		return nil
 	}
 
-	txid := payload.Outpoint.Txid.String()
-	outputIndex := int(payload.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(payload.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(payload.OutputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[payload.OutputIndex].LockingScript
 
 	// Decode the PushDrop token
-	result := pushdrop.Decode(payload.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil || len(result.Fields) < 2 {
 		err := fmt.Errorf("invalid HelloWorld token: invalid PushDrop structure")
 		slog.Error("HelloWorldLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
@@ -88,7 +97,7 @@ func (ls *HelloWorldLookupService) OutputAdmittedByTopic(ctx context.Context, pa
 	}
 
 	// Store the message
-	err := ls.storage.StoreRecord(txid, outputIndex, message)
+	err = ls.storage.StoreRecord(txid, outputIndex, message)
 	if err != nil {
 		slog.Error("HelloWorldLookupService: failed to store record", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err

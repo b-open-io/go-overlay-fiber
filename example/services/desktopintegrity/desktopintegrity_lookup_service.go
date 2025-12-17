@@ -99,10 +99,22 @@ func (ls *DesktopIntegrityLookupService) OutputAdmittedByTopic(ctx context.Conte
 		return nil
 	}
 
-	slog.Debug("DesktopIntegrity lookup service outputAdded", "txid", output.Outpoint.Txid.String(), "outputIndex", output.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	slog.Debug("DesktopIntegrity lookup service outputAdded", "txid", txid, "outputIndex", outputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[output.OutputIndex].LockingScript
 
 	// Parse the locking script to extract the file hash
-	chunks, err := output.LockingScript.ParseOps()
+	chunks, err := lockingScript.ParseOps()
 	if err != nil {
 		return fmt.Errorf("failed to parse locking script: %w", err)
 	}
@@ -126,12 +138,12 @@ func (ls *DesktopIntegrityLookupService) OutputAdmittedByTopic(ctx context.Conte
 	fileHashString := hex.EncodeToString(fileHashData[1:])
 
 	slog.Debug("DesktopIntegrity lookup service storing record",
-		"txid", output.Outpoint.Txid.String(),
-		"outputIndex", output.Outpoint.Index,
+		"txid", txid,
+		"outputIndex", outputIndex,
 		"fileHash", fileHashString)
 
 	// Store DesktopIntegrity record
-	if err := ls.storage.StoreRecord(ctx, output.Outpoint.Txid.String(), int(output.Outpoint.Index), fileHashString, output.OffChainValues); err != nil {
+	if err := ls.storage.StoreRecord(ctx, txid, outputIndex, fileHashString, output.OffChainValues); err != nil {
 		return fmt.Errorf("failed to store DesktopIntegrity record: %w", err)
 	}
 

@@ -64,8 +64,20 @@ func (ls *UMPLookupService) OutputAdmittedByTopic(ctx context.Context, output *e
 		return nil
 	}
 
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[output.OutputIndex].LockingScript
+
 	// Decode the UMP fields from the locking script
-	result := pushdrop.Decode(output.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil {
 		return fmt.Errorf("failed to decode PushDrop from locking script")
 	}
@@ -81,8 +93,8 @@ func (ls *UMPLookupService) OutputAdmittedByTopic(ctx context.Context, output *e
 
 	// Store UMP fields in database
 	record := &UMPRecord{
-		Txid:             output.Outpoint.Txid.String(),
-		OutputIndex:      int(output.Outpoint.Index),
+		Txid:             txid,
+		OutputIndex:      outputIndex,
 		PresentationHash: presentationHash,
 		RecoveryHash:     recoveryHash,
 	}

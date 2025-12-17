@@ -39,7 +39,7 @@ var _ engine.TopicManager = (*DesktopIntegrityTopicManager)(nil)
 func (tm *DesktopIntegrityTopicManager) IdentifyAdmissibleOutputs(
 	ctx context.Context,
 	beef []byte,
-	previousCoins map[uint32]*transaction.TransactionOutput,
+	previousCoins []uint32,
 ) (overlay.AdmittanceInstructions, error) {
 	outputsToAdmit := []uint32{}
 

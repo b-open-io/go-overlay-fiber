@@ -91,10 +91,22 @@ func (ls *CertMapLookupService) OutputAdmittedByTopic(ctx context.Context, outpu
 		return nil
 	}
 
-	slog.Debug("CertMap lookup service outputAdded", "txid", output.Outpoint.Txid.String(), "outputIndex", output.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(output.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(output.OutputIndex)
+
+	slog.Debug("CertMap lookup service outputAdded", "txid", txid, "outputIndex", outputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[output.OutputIndex].LockingScript
 
 	// Decode the CertMap token fields from the locking script
-	result := pushdrop.Decode(output.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil {
 		return fmt.Errorf("failed to decode PushDrop from locking script")
 	}
@@ -135,13 +147,13 @@ func (ls *CertMapLookupService) OutputAdmittedByTopic(ctx context.Context, outpu
 	}
 
 	slog.Debug("CertMap lookup service storing record",
-		"txid", output.Outpoint.Txid.String(),
-		"outputIndex", output.Outpoint.Index,
+		"txid", txid,
+		"outputIndex", outputIndex,
 		"type", certType,
 		"name", name)
 
 	// Store CertMap record
-	if err := ls.storage.StoreRecord(ctx, output.Outpoint.Txid.String(), int(output.Outpoint.Index), registration); err != nil {
+	if err := ls.storage.StoreRecord(ctx, txid, outputIndex, registration); err != nil {
 		return fmt.Errorf("failed to store CertMap record: %w", err)
 	}
 

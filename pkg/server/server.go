@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/b-open-io/overlay/beef"
 	"github.com/b-open-io/overlay/config"
 	"github.com/b-open-io/overlay/headers"
 	"github.com/b-open-io/overlay/pubsub"
@@ -262,8 +263,15 @@ func (s *OverlayServer) ConfigureEngine(autoConfigureShipSlap bool) *OverlayServ
 	eventStorageURL := os.Getenv("EVENT_STORAGE")
 	beefStorageURL := os.Getenv("BEEF_STORAGE")
 
+	// Create BEEF storage from URL
+	beefStorage, err := beef.NewStorage(beefStorageURL, nil)
+	if err != nil {
+		s.Logger.Error("Failed to create BEEF storage", "error", err)
+		return s
+	}
+
 	// Use overlay storage with database connection
-	eventStorage, err := config.CreateEventStorage(eventStorageURL, beefStorageURL, "", "", nil)
+	eventStorage, err := config.CreateEventStorage(eventStorageURL, beefStorage, "", "", nil)
 	if err != nil {
 		s.Logger.Error("Failed to create overlay storage", "error", err)
 		return s

@@ -65,13 +65,22 @@ func (ls *DIDLookupService) OutputAdmittedByTopic(ctx context.Context, payload *
 		return nil
 	}
 
-	txid := payload.Outpoint.Txid.String()
-	outputIndex := int(payload.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(payload.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(payload.OutputIndex)
 
 	slog.Debug("DID lookup service output admitted", "txid", txid, "outputIndex", outputIndex)
 
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[payload.OutputIndex].LockingScript
+
 	// Decode the DID token fields from the Bitcoin outputScript
-	result := pushdrop.Decode(payload.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil || len(result.Fields) < 2 {
 		err := fmt.Errorf("invalid DID token: invalid PushDrop structure")
 		slog.Error("DIDLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
@@ -84,7 +93,7 @@ func (ls *DIDLookupService) OutputAdmittedByTopic(ctx context.Context, payload *
 	slog.Debug("DID lookup service storing record", "txid", txid, "outputIndex", outputIndex, "serialNumber", serialNumber)
 
 	// Store DID record
-	err := ls.storage.StoreRecord(txid, outputIndex, serialNumber)
+	err = ls.storage.StoreRecord(txid, outputIndex, serialNumber)
 	if err != nil {
 		slog.Error("DIDLookupService: failed to store record", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err

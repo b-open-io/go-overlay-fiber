@@ -101,11 +101,20 @@ func (ls *MessageBoxLookupService) OutputAdmittedByTopic(ctx context.Context, pa
 		return nil
 	}
 
-	txid := payload.Outpoint.Txid.String()
-	outputIndex := int(payload.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(payload.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(payload.OutputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[payload.OutputIndex].LockingScript
 
 	// Decode the PushDrop token
-	result := pushdrop.Decode(payload.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil || len(result.Fields) < 3 {
 		err := fmt.Errorf("invalid MessageBox token: invalid PushDrop structure")
 		slog.Error("MessageBoxLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
@@ -128,7 +137,7 @@ func (ls *MessageBoxLookupService) OutputAdmittedByTopic(ctx context.Context, pa
 	slog.Debug("MessageBox decoded advertisement", "identityKey", identityKey, "host", host)
 
 	// Store the advertisement
-	err := ls.storage.StoreRecord(identityKey, host, txid, outputIndex)
+	err = ls.storage.StoreRecord(identityKey, host, txid, outputIndex)
 	if err != nil {
 		slog.Error("MessageBoxLookupService: failed to store record", "txid", txid, "outputIndex", outputIndex, "error", err)
 		return err

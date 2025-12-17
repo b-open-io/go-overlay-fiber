@@ -78,11 +78,20 @@ func (ls *UHRPLookupService) OutputAdmittedByTopic(ctx context.Context, payload 
 		return nil
 	}
 
-	txid := payload.Outpoint.Txid.String()
-	outputIndex := int(payload.Outpoint.Index)
+	// Parse the AtomicBEEF to get the transaction
+	tx, err := transaction.NewTransactionFromBEEF(payload.AtomicBEEF)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction from BEEF: %w", err)
+	}
+
+	txid := tx.TxID().String()
+	outputIndex := int(payload.OutputIndex)
+
+	// Get the locking script from the transaction output
+	lockingScript := tx.Outputs[payload.OutputIndex].LockingScript
 
 	// Decode the PushDrop token
-	result := pushdrop.Decode(payload.LockingScript)
+	result := pushdrop.Decode(lockingScript)
 	if result == nil || len(result.Fields) < 6 {
 		err := fmt.Errorf("invalid UHRP token: invalid PushDrop structure")
 		slog.Error("UHRPLookupService: failed to index output", "txid", txid, "outputIndex", outputIndex, "error", err)
