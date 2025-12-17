@@ -68,13 +68,20 @@ Returns an array of UTXO references (txid + outputIndex) for all protocol regist
 
 // ProtoMapLookupService implements a lookup service for ProtoMap protocol registry
 type ProtoMapLookupService struct {
-	storage *ProtoMapStorage
+	storage ProtoMapStorageEngine
 }
 
 // NewProtoMapLookupService creates a new ProtoMapLookupService instance
 func NewProtoMapLookupService(db *mongo.Database) *ProtoMapLookupService {
 	return &ProtoMapLookupService{
 		storage: NewProtoMapStorage(db),
+	}
+}
+
+// NewProtoMapLookupServiceWithStorage creates a new ProtoMapLookupService with a custom storage engine
+func NewProtoMapLookupServiceWithStorage(storage ProtoMapStorageEngine) *ProtoMapLookupService {
+	return &ProtoMapLookupService{
+		storage: storage,
 	}
 }
 
@@ -226,6 +233,10 @@ func (ls *ProtoMapLookupService) OutputBlockHeightUpdated(ctx context.Context, t
 
 // Lookup performs a lookup query
 func (ls *ProtoMapLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	if question == nil {
+		return nil, fmt.Errorf("a valid query must be provided")
+	}
+
 	// Parse the query
 	var query ProtoMapQuery
 	if err := json.Unmarshal(question.Query, &query); err != nil {

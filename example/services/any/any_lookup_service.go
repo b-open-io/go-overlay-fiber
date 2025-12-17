@@ -23,13 +23,20 @@ Literally any transaction you submitted prior can be looked up here by txid or f
 
 // AnyLookupService implements a lookup service for the Any protocol
 type AnyLookupService struct {
-	storage *AnyStorage
+	storage AnyStorageEngine
 }
 
 // NewAnyLookupService creates a new AnyLookupService instance
 func NewAnyLookupService(db *mongo.Database) *AnyLookupService {
 	return &AnyLookupService{
 		storage: NewAnyStorage(db),
+	}
+}
+
+// NewAnyLookupServiceWithStorage creates a new AnyLookupService with a custom storage engine
+func NewAnyLookupServiceWithStorage(storage AnyStorageEngine) *AnyLookupService {
+	return &AnyLookupService{
+		storage: storage,
 	}
 }
 

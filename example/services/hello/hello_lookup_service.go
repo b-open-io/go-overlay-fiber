@@ -42,13 +42,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 
 // HelloWorldLookupService implements a lookup service for the HelloWorld protocol
 type HelloWorldLookupService struct {
-	storage *HelloWorldStorage
+	storage HelloWorldStorageEngine
 }
 
 // NewHelloWorldLookupService creates a new HelloWorldLookupService instance
 func NewHelloWorldLookupService(db *mongo.Database) *HelloWorldLookupService {
 	return &HelloWorldLookupService{
 		storage: NewHelloWorldStorage(db),
+	}
+}
+
+// NewHelloWorldLookupServiceWithStorage creates a new HelloWorldLookupService with a custom storage engine
+func NewHelloWorldLookupServiceWithStorage(storage HelloWorldStorageEngine) *HelloWorldLookupService {
+	return &HelloWorldLookupService{
+		storage: storage,
 	}
 }
 

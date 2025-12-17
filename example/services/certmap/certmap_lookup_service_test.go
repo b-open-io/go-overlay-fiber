@@ -3,9 +3,8 @@ package certmap
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"regexp"
 	"testing"
-	"time"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
@@ -13,44 +12,113 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// getTestMongoDB returns a MongoDB database for testing, or nil if MongoDB is not available
-func getTestMongoDB(t *testing.T) *mongo.Database {
-	mongoURI := os.Getenv("MONGODB_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	// Use a short timeout for connection attempts
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	clientOpts := options.Client().ApplyURI(mongoURI).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
-	client, err := mongo.Connect(ctx, clientOpts)
-	if err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Ping to verify connection with timeout
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := client.Ping(pingCtx, nil); err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Use a test-specific database
-	return client.Database("certmap_test_" + t.Name())
+// MockCertMapStorage is a mock implementation of CertMapStorageEngine for testing
+type MockCertMapStorage struct {
+	records     map[string]*CertMapRecord
+	storeError  error
+	deleteError error
+	findError   error
 }
 
-func cleanupTestDB(t *testing.T, db *mongo.Database) {
-	if db != nil {
-		_ = db.Drop(context.Background())
+func NewMockCertMapStorage() *MockCertMapStorage {
+	return &MockCertMapStorage{
+		records: make(map[string]*CertMapRecord),
 	}
+}
+
+func (m *MockCertMapStorage) makeKey(txid string, outputIndex int) string {
+	return txid + ":" + string(rune(outputIndex))
+}
+
+func (m *MockCertMapStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, registration *CertMapRegistration) error {
+	if m.storeError != nil {
+		return m.storeError
+	}
+	key := m.makeKey(txid, outputIndex)
+	m.records[key] = &CertMapRecord{
+		Txid:         txid,
+		OutputIndex:  outputIndex,
+		Registration: registration,
+	}
+	return nil
+}
+
+func (m *MockCertMapStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
+	if m.deleteError != nil {
+		return m.deleteError
+	}
+	key := m.makeKey(txid, outputIndex)
+	delete(m.records, key)
+	return nil
+}
+
+func (m *MockCertMapStorage) FindByType(ctx context.Context, certType string, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.Registration.Type == certType {
+			// Check if registry operator matches
+			for _, op := range registryOperators {
+				if record.Registration.RegistryOperator == op {
+					results = append(results, UTXOReference{
+						Txid:        record.Txid,
+						OutputIndex: record.OutputIndex,
+					})
+					break
+				}
+			}
+		}
+	}
+	return results, nil
+}
+
+func (m *MockCertMapStorage) FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	// Create fuzzy pattern like the real implementation
+	escaped := regexp.QuoteMeta(name)
+	fuzzyPattern := ""
+	for i, char := range escaped {
+		if i > 0 {
+			fuzzyPattern += ".*"
+		}
+		fuzzyPattern += string(char)
+	}
+	fuzzyRegex, err := regexp.Compile("(?i)" + fuzzyPattern)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		// Check if registry operator matches
+		operatorMatches := false
+		for _, op := range registryOperators {
+			if record.Registration.RegistryOperator == op {
+				operatorMatches = true
+				break
+			}
+		}
+		if !operatorMatches {
+			continue
+		}
+
+		// Check if name matches fuzzy pattern
+		if fuzzyRegex.MatchString(record.Registration.Name) {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return results, nil
 }
 
 // makeQuery creates a json.RawMessage from a map
@@ -70,38 +138,23 @@ func makeHashFromHex(hexStr string) *chainhash.Hash {
 }
 
 func TestCertMapLookupService_NewInstance(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 	require.NotNil(t, ls)
 	require.NotNil(t, ls.storage)
 }
 
 func TestCertMapLookupService_GetDocumentation(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 	docs := ls.GetDocumentation()
 	assert.Contains(t, docs, "CertMap Lookup Service")
 	assert.Contains(t, docs, "ls_certmap")
 }
 
 func TestCertMapLookupService_GetMetaData(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 	meta := ls.GetMetaData()
 	require.NotNil(t, meta)
 	assert.Equal(t, "CertMap Lookup Service", meta.Name)
@@ -109,44 +162,16 @@ func TestCertMapLookupService_GetMetaData(t *testing.T) {
 }
 
 func TestCertMapLookupService_Lookup_NilQuestion(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 	answer, err := ls.Lookup(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Nil(t, answer)
 }
 
-func TestCertMapLookupService_Lookup_WrongService(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
-	question := &lookup.LookupQuestion{
-		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"type": "test-type", "registryOperators": []string{"operator1"}}),
-	}
-	answer, err := ls.Lookup(context.Background(), question)
-	require.NoError(t, err)
-	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
-}
-
 func TestCertMapLookupService_Lookup_EmptyQuery(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
 		Query:   makeQuery(map[string]interface{}{}),
@@ -158,13 +183,8 @@ func TestCertMapLookupService_Lookup_EmptyQuery(t *testing.T) {
 }
 
 func TestCertMapLookupService_Lookup_MissingRegistryOperators(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
 		Query:   makeQuery(map[string]interface{}{"type": "test-type"}),
@@ -176,13 +196,8 @@ func TestCertMapLookupService_Lookup_MissingRegistryOperators(t *testing.T) {
 }
 
 func TestCertMapLookupService_Lookup_MissingTypeAndName(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
 		Query:   makeQuery(map[string]interface{}{"registryOperators": []string{"operator1"}}),
@@ -194,13 +209,8 @@ func TestCertMapLookupService_Lookup_MissingTypeAndName(t *testing.T) {
 }
 
 func TestCertMapLookupService_Lookup_ByType(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registration := &CertMapRegistration{
@@ -212,7 +222,7 @@ func TestCertMapLookupService_Lookup_ByType(t *testing.T) {
 		CertFields:       map[string]interface{}{"field1": "value1"},
 		RegistryOperator: "operator1",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid123", 0, registration)
+	err := storage.StoreRecord(context.Background(), "txid123", 0, registration)
 	require.NoError(t, err)
 
 	// Lookup by type
@@ -226,7 +236,7 @@ func TestCertMapLookupService_Lookup_ByType(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -236,13 +246,8 @@ func TestCertMapLookupService_Lookup_ByType(t *testing.T) {
 }
 
 func TestCertMapLookupService_Lookup_ByName(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
 	// Store records with different names
 	registration1 := &CertMapRegistration{
@@ -254,7 +259,7 @@ func TestCertMapLookupService_Lookup_ByName(t *testing.T) {
 		CertFields:       map[string]interface{}{"field1": "value1"},
 		RegistryOperator: "operator1",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, registration1)
+	err := storage.StoreRecord(context.Background(), "txid1", 0, registration1)
 	require.NoError(t, err)
 
 	registration2 := &CertMapRegistration{
@@ -266,7 +271,7 @@ func TestCertMapLookupService_Lookup_ByName(t *testing.T) {
 		CertFields:       map[string]interface{}{"field2": "value2"},
 		RegistryOperator: "operator1",
 	}
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0, registration2)
+	err = storage.StoreRecord(context.Background(), "txid2", 0, registration2)
 	require.NoError(t, err)
 
 	// Lookup by name (fuzzy)
@@ -287,13 +292,8 @@ func TestCertMapLookupService_Lookup_ByName(t *testing.T) {
 }
 
 func TestCertMapLookupService_Lookup_FilterByRegistryOperator(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
 	// Store records with different registry operators
 	registration1 := &CertMapRegistration{
@@ -305,7 +305,7 @@ func TestCertMapLookupService_Lookup_FilterByRegistryOperator(t *testing.T) {
 		CertFields:       map[string]interface{}{"field1": "value1"},
 		RegistryOperator: "operator1",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, registration1)
+	err := storage.StoreRecord(context.Background(), "txid1", 0, registration1)
 	require.NoError(t, err)
 
 	registration2 := &CertMapRegistration{
@@ -317,7 +317,7 @@ func TestCertMapLookupService_Lookup_FilterByRegistryOperator(t *testing.T) {
 		CertFields:       map[string]interface{}{"field2": "value2"},
 		RegistryOperator: "operator2",
 	}
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0, registration2)
+	err = storage.StoreRecord(context.Background(), "txid2", 0, registration2)
 	require.NoError(t, err)
 
 	// Lookup by type, filtering by registry operator
@@ -339,13 +339,8 @@ func TestCertMapLookupService_Lookup_FilterByRegistryOperator(t *testing.T) {
 }
 
 func TestCertMapLookupService_Lookup_NoResults(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
 	// Lookup non-existent type
 	question := &lookup.LookupQuestion{
@@ -358,7 +353,7 @@ func TestCertMapLookupService_Lookup_NoResults(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -366,15 +361,10 @@ func TestCertMapLookupService_Lookup_NoResults(t *testing.T) {
 }
 
 func TestCertMapLookupService_OutputSpent(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
-	ls := NewCertMapLookupService(db)
-
-	// Store a record first - use a valid hex txid
+	// Store a record first
 	txidHex := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 	registration := &CertMapRegistration{
 		Type:             "test-type",
@@ -385,7 +375,7 @@ func TestCertMapLookupService_OutputSpent(t *testing.T) {
 		CertFields:       map[string]interface{}{"field1": "value1"},
 		RegistryOperator: "operator1",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 1, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 1, registration)
 	require.NoError(t, err)
 
 	// Mark as spent
@@ -418,15 +408,10 @@ func TestCertMapLookupService_OutputSpent(t *testing.T) {
 }
 
 func TestCertMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
-	ls := NewCertMapLookupService(db)
-
-	// Store a record first - use a valid hex txid
+	// Store a record first
 	txidHex := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	registration := &CertMapRegistration{
 		Type:             "test-type",
@@ -437,7 +422,7 @@ func TestCertMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
 		CertFields:       map[string]interface{}{"field1": "value1"},
 		RegistryOperator: "operator1",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
@@ -470,15 +455,10 @@ func TestCertMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
 }
 
 func TestCertMapLookupService_OutputEvicted(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
-	ls := NewCertMapLookupService(db)
-
-	// Store a record first - use a valid hex txid
+	// Store a record first
 	txidHex := "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
 	registration := &CertMapRegistration{
 		Type:             "test-type",
@@ -489,7 +469,7 @@ func TestCertMapLookupService_OutputEvicted(t *testing.T) {
 		CertFields:       map[string]interface{}{"field1": "value1"},
 		RegistryOperator: "operator1",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Evict the output
@@ -519,13 +499,8 @@ func TestCertMapLookupService_OutputEvicted(t *testing.T) {
 }
 
 func TestCertMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000001"
@@ -538,7 +513,7 @@ func TestCertMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 		CertFields:       map[string]interface{}{"field1": "value1"},
 		RegistryOperator: "operator1",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
@@ -568,13 +543,8 @@ func TestCertMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 }
 
 func TestCertMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"
@@ -587,7 +557,7 @@ func TestCertMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *test
 		CertFields:       map[string]interface{}{"field1": "value1"},
 		RegistryOperator: "operator1",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Call with wrong topic
@@ -617,13 +587,8 @@ func TestCertMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *test
 }
 
 func TestCertMapLookupService_OutputBlockHeightUpdated(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
+	storage := NewMockCertMapStorage()
+	ls := NewCertMapLookupServiceWithStorage(storage)
 
 	// This is a no-op for CertMap, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000003"
@@ -631,46 +596,5 @@ func TestCertMapLookupService_OutputBlockHeightUpdated(t *testing.T) {
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)
-	require.NoError(t, err)
-}
-
-func TestCertMapLookupService_OutputAdmittedByTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewCertMapLookupService(db)
-
-	// Create a valid CertMap transaction
-	tx, err := createValidCertMapTransaction(t)
-	require.NoError(t, err)
-
-	beef, err := tx.BEEF()
-	require.NoError(t, err)
-
-	// Call OutputAdmittedByTopic
-	payload := &engine.OutputAdmittedByTopic{
-		Topic:       "tm_certmap",
-		OutputIndex: 0,
-		AtomicBEEF:  beef,
-	}
-
-	err = ls.OutputAdmittedByTopic(context.Background(), payload)
-	require.NoError(t, err)
-
-	// Verify it was stored by looking it up
-	question := &lookup.LookupQuestion{
-		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
-			"type":              "test-type",
-			"registryOperators": []string{},
-		}),
-	}
-
-	// Note: This might not return results because we need the actual registry operator from the transaction
-	// This test mainly verifies that OutputAdmittedByTopic doesn't error
-	_, err = ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 }

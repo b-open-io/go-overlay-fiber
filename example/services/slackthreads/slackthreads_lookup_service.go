@@ -56,13 +56,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 // Each admitted output stores exactly one 32-byte hash in the locking script.
 // This service indexes those thread hashes so they can be queried later.
 type SlackThreadLookupService struct {
-	storage *SlackThreadsStorage
+	storage SlackThreadsStorageEngine
 }
 
 // NewSlackThreadLookupService creates a new SlackThreadLookupService instance
 func NewSlackThreadLookupService(db *mongo.Database) *SlackThreadLookupService {
 	return &SlackThreadLookupService{
 		storage: NewSlackThreadsStorage(db),
+	}
+}
+
+// NewSlackThreadsLookupServiceWithStorage creates a new SlackThreadLookupService with a custom storage engine
+func NewSlackThreadsLookupServiceWithStorage(storage SlackThreadsStorageEngine) *SlackThreadLookupService {
+	return &SlackThreadLookupService{
+		storage: storage,
 	}
 }
 

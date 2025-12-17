@@ -80,13 +80,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 
 // AppsLookupService implements a lookup service for Apps catalog
 type AppsLookupService struct {
-	storage *AppsStorage
+	storage AppsStorageEngine
 }
 
 // NewAppsLookupService creates a new AppsLookupService instance
 func NewAppsLookupService(db *mongo.Database) *AppsLookupService {
 	return &AppsLookupService{
 		storage: NewAppsStorage(db),
+	}
+}
+
+// NewAppsLookupServiceWithStorage creates a new AppsLookupService with a custom storage engine
+func NewAppsLookupServiceWithStorage(storage AppsStorageEngine) *AppsLookupService {
+	return &AppsLookupService{
+		storage: storage,
 	}
 }
 
@@ -223,6 +230,10 @@ func (ls *AppsLookupService) OutputBlockHeightUpdated(ctx context.Context, txid 
 
 // Lookup performs a lookup query
 func (ls *AppsLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	if question == nil {
+		return nil, fmt.Errorf("a valid query must be provided")
+	}
+
 	slog.Debug("Apps lookup", "query", string(question.Query))
 
 	// Parse the query

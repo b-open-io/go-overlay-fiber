@@ -11,10 +11,21 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// CertMapStorageEngine defines the interface for CertMap storage operations
+type CertMapStorageEngine interface {
+	StoreRecord(ctx context.Context, txid string, outputIndex int, registration *CertMapRegistration) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByType(ctx context.Context, certType string, registryOperators []string) ([]UTXOReference, error)
+	FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error)
+}
+
 // CertMapStorage handles CertMap record storage in MongoDB
 type CertMapStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure CertMapStorage implements CertMapStorageEngine
+var _ CertMapStorageEngine = (*CertMapStorage)(nil)
 
 // NewCertMapStorage creates a new CertMap storage instance
 func NewCertMapStorage(db *mongo.Database) *CertMapStorage {

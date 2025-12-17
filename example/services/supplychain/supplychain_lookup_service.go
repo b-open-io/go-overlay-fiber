@@ -71,13 +71,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 
 // SupplyChainLookupService implements a lookup service for SupplyChain protocol
 type SupplyChainLookupService struct {
-	storage *SupplyChainStorage
+	storage SupplyChainStorageEngine
 }
 
 // NewSupplyChainLookupService creates a new SupplyChainLookupService instance
 func NewSupplyChainLookupService(db *mongo.Database) *SupplyChainLookupService {
 	return &SupplyChainLookupService{
 		storage: NewSupplyChainStorage(db),
+	}
+}
+
+// NewSupplyChainLookupServiceWithStorage creates a new SupplyChainLookupService with a custom storage engine
+func NewSupplyChainLookupServiceWithStorage(storage SupplyChainStorageEngine) *SupplyChainLookupService {
+	return &SupplyChainLookupService{
+		storage: storage,
 	}
 }
 
@@ -200,6 +207,10 @@ func (ls *SupplyChainLookupService) OutputBlockHeightUpdated(ctx context.Context
 
 // Lookup performs a lookup query
 func (ls *SupplyChainLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	if question == nil {
+		return nil, fmt.Errorf("a valid query must be provided")
+	}
+
 	slog.Debug("SupplyChain lookup", "query", string(question.Query))
 
 	// Parse the query

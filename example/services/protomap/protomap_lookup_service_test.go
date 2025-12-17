@@ -3,56 +3,118 @@ package protomap
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"testing"
-	"time"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/template/pushdrop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// getTestMongoDB returns a MongoDB database for testing, or nil if MongoDB is not available
-func getTestMongoDB(t *testing.T) *mongo.Database {
-	mongoURI := os.Getenv("MONGODB_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	// Use a short timeout for connection attempts
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	clientOpts := options.Client().ApplyURI(mongoURI).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
-	client, err := mongo.Connect(ctx, clientOpts)
-	if err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Ping to verify connection with timeout
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := client.Ping(pingCtx, nil); err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Use a test-specific database
-	return client.Database("protomap_test_" + t.Name())
+// MockProtoMapStorage is a mock implementation of ProtoMapStorageEngine for testing
+type MockProtoMapStorage struct {
+	records     map[string]ProtoMapRecord
+	storeError  error
+	deleteError error
+	findError   error
 }
 
-func cleanupTestDB(t *testing.T, db *mongo.Database) {
-	if db != nil {
-		_ = db.Drop(context.Background())
+func NewMockProtoMapStorage() *MockProtoMapStorage {
+	return &MockProtoMapStorage{
+		records: make(map[string]ProtoMapRecord),
 	}
+}
+
+func (m *MockProtoMapStorage) makeKey(txid string, outputIndex int) string {
+	return txid + ":" + string(rune(outputIndex))
+}
+
+func (m *MockProtoMapStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, registration ProtoMapRegistration) error {
+	if m.storeError != nil {
+		return m.storeError
+	}
+	key := m.makeKey(txid, outputIndex)
+	m.records[key] = ProtoMapRecord{
+		Txid:         txid,
+		OutputIndex:  outputIndex,
+		Registration: registration,
+	}
+	return nil
+}
+
+func (m *MockProtoMapStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
+	if m.deleteError != nil {
+		return m.deleteError
+	}
+	key := m.makeKey(txid, outputIndex)
+	delete(m.records, key)
+	return nil
+}
+
+func (m *MockProtoMapStorage) FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		// Check if name matches
+		if record.Registration.Name != name {
+			continue
+		}
+		// Check if registry operator is in the list
+		found := false
+		for _, op := range registryOperators {
+			if record.Registration.RegistryOperator == op {
+				found = true
+				break
+			}
+		}
+		if found {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+
+	return results, nil
+}
+
+func (m *MockProtoMapStorage) FindByProtocolID(ctx context.Context, protocolID ProtocolID, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		// Check if protocolID matches
+		if record.Registration.ProtocolID.SecurityLevel != protocolID.SecurityLevel ||
+			record.Registration.ProtocolID.Protocol != protocolID.Protocol {
+			continue
+		}
+		// Check if registry operator is in the list
+		found := false
+		for _, op := range registryOperators {
+			if record.Registration.RegistryOperator == op {
+				found = true
+				break
+			}
+		}
+		if found {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+
+	return results, nil
 }
 
 // makeQuery creates a json.RawMessage from a map
@@ -72,38 +134,23 @@ func makeHashFromHex(hexStr string) *chainhash.Hash {
 }
 
 func TestProtoMapLookupService_NewInstance(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 	require.NotNil(t, ls)
 	require.NotNil(t, ls.storage)
 }
 
 func TestProtoMapLookupService_GetDocumentation(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 	docs := ls.GetDocumentation()
 	assert.Contains(t, docs, "ProtoMap Lookup Service")
 	assert.Contains(t, docs, "ls_protomap")
 }
 
 func TestProtoMapLookupService_GetMetaData(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 	meta := ls.GetMetaData()
 	require.NotNil(t, meta)
 	assert.Equal(t, "ProtoMap", meta.Name)
@@ -111,26 +158,16 @@ func TestProtoMapLookupService_GetMetaData(t *testing.T) {
 }
 
 func TestProtoMapLookupService_Lookup_NilQuestion(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 	answer, err := ls.Lookup(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Nil(t, answer)
 }
 
 func TestProtoMapLookupService_Lookup_WrongService(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
 		Query:   makeQuery(map[string]interface{}{"name": "test"}),
@@ -148,13 +185,8 @@ func TestProtoMapLookupService_Lookup_WrongService(t *testing.T) {
 }
 
 func TestProtoMapLookupService_Lookup_EmptyQuery(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_protomap",
 		Query:   makeQuery(map[string]interface{}{}),
@@ -166,13 +198,8 @@ func TestProtoMapLookupService_Lookup_EmptyQuery(t *testing.T) {
 }
 
 func TestProtoMapLookupService_Lookup_ByName(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Store a record first
 	testName := "test-protocol"
@@ -185,7 +212,7 @@ func TestProtoMapLookupService_Lookup_ByName(t *testing.T) {
 		},
 		Name: testName,
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid123", 0, registration)
+	err := storage.StoreRecord(context.Background(), "txid123", 0, registration)
 	require.NoError(t, err)
 
 	// Lookup by name
@@ -209,13 +236,8 @@ func TestProtoMapLookupService_Lookup_ByName(t *testing.T) {
 }
 
 func TestProtoMapLookupService_Lookup_ByProtocolID(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registryOperator := "02fedcba0987654321"
@@ -227,7 +249,7 @@ func TestProtoMapLookupService_Lookup_ByProtocolID(t *testing.T) {
 		},
 		Name: "My Protocol",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid456", 1, registration)
+	err := storage.StoreRecord(context.Background(), "txid456", 1, registration)
 	require.NoError(t, err)
 
 	// Lookup by protocol ID
@@ -253,13 +275,8 @@ func TestProtoMapLookupService_Lookup_ByProtocolID(t *testing.T) {
 }
 
 func TestProtoMapLookupService_Lookup_MultipleRegistryOperators(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Store multiple records with different operators
 	operator1 := "operator1"
@@ -282,11 +299,11 @@ func TestProtoMapLookupService_Lookup_MultipleRegistryOperators(t *testing.T) {
 		Name:             "Protocol A",
 	}
 
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, registration1)
+	err := storage.StoreRecord(context.Background(), "txid1", 0, registration1)
 	require.NoError(t, err)
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0, registration2)
+	err = storage.StoreRecord(context.Background(), "txid2", 0, registration2)
 	require.NoError(t, err)
-	err = ls.storage.StoreRecord(context.Background(), "txid3", 0, registration3)
+	err = storage.StoreRecord(context.Background(), "txid3", 0, registration3)
 	require.NoError(t, err)
 
 	// Lookup with only operator1 and operator2
@@ -307,13 +324,8 @@ func TestProtoMapLookupService_Lookup_MultipleRegistryOperators(t *testing.T) {
 }
 
 func TestProtoMapLookupService_Lookup_NoResults(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Lookup non-existent protocol
 	question := &lookup.LookupQuestion{
@@ -334,13 +346,8 @@ func TestProtoMapLookupService_Lookup_NoResults(t *testing.T) {
 }
 
 func TestProtoMapLookupService_OutputAdmittedByTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Create a valid ProtoMap transaction
 	tx := transaction.NewTransaction()
@@ -379,19 +386,14 @@ func TestProtoMapLookupService_OutputAdmittedByTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the record was stored
-	results, err := ls.storage.FindByName(context.Background(), "Test Protocol", []string{"02abcdef1234567890"})
+	results, err := storage.FindByName(context.Background(), "Test Protocol", []string{"02abcdef1234567890"})
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestProtoMapLookupService_OutputAdmittedByTopic_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Create a valid transaction
 	tx := transaction.NewTransaction()
@@ -408,19 +410,14 @@ func TestProtoMapLookupService_OutputAdmittedByTopic_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// No records should be stored
-	results, err := ls.storage.FindByName(context.Background(), "Test", []string{"operator"})
+	results, err := storage.FindByName(context.Background(), "Test", []string{"operator"})
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestProtoMapLookupService_OutputSpent(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Store a record first - use a valid hex txid
 	txidHex := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
@@ -429,11 +426,11 @@ func TestProtoMapLookupService_OutputSpent(t *testing.T) {
 		ProtocolID:       ProtocolID{SecurityLevel: 1, Protocol: "test"},
 		Name:             "Test",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 1, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 1, registration)
 	require.NoError(t, err)
 
 	// Verify it exists
-	results, err := ls.storage.FindByName(context.Background(), "Test", []string{"operator1"})
+	results, err := storage.FindByName(context.Background(), "Test", []string{"operator1"})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -452,19 +449,14 @@ func TestProtoMapLookupService_OutputSpent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err = ls.storage.FindByName(context.Background(), "Test", []string{"operator1"})
+	results, err = storage.FindByName(context.Background(), "Test", []string{"operator1"})
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestProtoMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Store a record first - use a valid hex txid
 	txidHex := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
@@ -473,7 +465,7 @@ func TestProtoMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
 		ProtocolID:       ProtocolID{SecurityLevel: 1, Protocol: "test"},
 		Name:             "Test",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
@@ -491,19 +483,14 @@ func TestProtoMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it still exists (was not deleted)
-	results, err := ls.storage.FindByName(context.Background(), "Test", []string{"operator1"})
+	results, err := storage.FindByName(context.Background(), "Test", []string{"operator1"})
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestProtoMapLookupService_OutputEvicted(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Store a record first - use a valid hex txid
 	txidHex := "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
@@ -512,7 +499,7 @@ func TestProtoMapLookupService_OutputEvicted(t *testing.T) {
 		ProtocolID:       ProtocolID{SecurityLevel: 1, Protocol: "test"},
 		Name:             "Test",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Evict the output
@@ -527,19 +514,14 @@ func TestProtoMapLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err := ls.storage.FindByName(context.Background(), "Test", []string{"operator1"})
+	results, err := storage.FindByName(context.Background(), "Test", []string{"operator1"})
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestProtoMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000001"
@@ -548,7 +530,7 @@ func TestProtoMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 		ProtocolID:       ProtocolID{SecurityLevel: 1, Protocol: "test"},
 		Name:             "Test",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
@@ -563,19 +545,14 @@ func TestProtoMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err := ls.storage.FindByName(context.Background(), "Test", []string{"operator1"})
+	results, err := storage.FindByName(context.Background(), "Test", []string{"operator1"})
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestProtoMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"
@@ -584,7 +561,7 @@ func TestProtoMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *tes
 		ProtocolID:       ProtocolID{SecurityLevel: 1, Protocol: "test"},
 		Name:             "Test",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Call with wrong topic
@@ -599,19 +576,14 @@ func TestProtoMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *tes
 	require.NoError(t, err)
 
 	// Verify it still exists
-	results, err := ls.storage.FindByName(context.Background(), "Test", []string{"operator1"})
+	results, err := storage.FindByName(context.Background(), "Test", []string{"operator1"})
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestProtoMapLookupService_OutputBlockHeightUpdated(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewProtoMapLookupService(db)
+	storage := NewMockProtoMapStorage()
+	ls := NewProtoMapLookupServiceWithStorage(storage)
 
 	// This is a no-op for ProtoMap, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000003"
@@ -625,25 +597,34 @@ func TestProtoMapLookupService_OutputBlockHeightUpdated(t *testing.T) {
 // Helper functions
 
 func createProtoMapPushDropScript(fields [][]byte) (*script.Script, error) {
-	// Create the PushDrop chunks
-	pushDropChunks := make([]*script.ScriptChunk, 0)
+	// PushDrop format: <pubkey_length> <pubkey> OP_CHECKSIG <fields...> <2DROP...> <DROP?>
+	// Generate a valid public key
+	privateKey, err := ec.NewPrivateKey()
+	if err != nil {
+		return nil, err
+	}
+	pubKeyBytes := privateKey.PubKey().Compressed()
+
+	// Start with locking key (lock-before pattern)
+	allChunks := []*script.ScriptChunk{
+		{Op: byte(len(pubKeyBytes)), Data: pubKeyBytes},
+		{Op: script.OpCHECKSIG},
+	}
+
+	// Add field data
 	for _, field := range fields {
-		pushDropChunks = append(pushDropChunks, pushdrop.CreateMinimallyEncodedScriptChunk(field))
+		allChunks = append(allChunks, pushdrop.CreateMinimallyEncodedScriptChunk(field))
 	}
 
 	// Add DROP operations
 	notYetDropped := len(fields)
 	for notYetDropped > 1 {
-		pushDropChunks = append(pushDropChunks, &script.ScriptChunk{Op: script.Op2DROP})
+		allChunks = append(allChunks, &script.ScriptChunk{Op: script.Op2DROP})
 		notYetDropped -= 2
 	}
 	if notYetDropped != 0 {
-		pushDropChunks = append(pushDropChunks, &script.ScriptChunk{Op: script.OpDROP})
+		allChunks = append(allChunks, &script.ScriptChunk{Op: script.OpDROP})
 	}
-
-	// Add OP_RETURN at the beginning
-	allChunks := []*script.ScriptChunk{{Op: script.OpRETURN}}
-	allChunks = append(allChunks, pushDropChunks...)
 
 	return script.NewScriptFromScriptOps(allChunks)
 }

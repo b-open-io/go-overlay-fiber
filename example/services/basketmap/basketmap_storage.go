@@ -10,10 +10,21 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// BasketMapStorageEngine defines the interface for BasketMap storage operations
+type BasketMapStorageEngine interface {
+	StoreRecord(ctx context.Context, txid string, outputIndex int, registration BasketMapRegistration) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByID(ctx context.Context, basketID string, registryOperators []string) ([]UTXOReference, error)
+	FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error)
+}
+
 // BasketMapStorage handles BasketMap record storage in MongoDB
 type BasketMapStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure BasketMapStorage implements BasketMapStorageEngine
+var _ BasketMapStorageEngine = (*BasketMapStorage)(nil)
 
 // NewBasketMapStorage creates a new BasketMap storage instance
 func NewBasketMapStorage(db *mongo.Database) *BasketMapStorage {
@@ -79,7 +90,7 @@ func (s *BasketMapStorage) FindByName(ctx context.Context, name string, registry
 }
 
 // getFuzzyRegex converts a string into a regex pattern for fuzzy search
-// Matches the TypeScript implementation: input.split('').join('.*')
+// Matches the TypeScript implementation: input.split(”).join('.*')
 func getFuzzyRegex(input string) bson.M {
 	// Escape special regex characters
 	escaped := regexp.QuoteMeta(input)

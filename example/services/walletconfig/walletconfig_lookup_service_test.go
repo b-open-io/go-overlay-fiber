@@ -3,9 +3,8 @@ package walletconfig
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
@@ -13,44 +12,176 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// getTestMongoDB returns a MongoDB database for testing, or nil if MongoDB is not available
-func getTestMongoDB(t *testing.T) *mongo.Database {
-	mongoURI := os.Getenv("MONGODB_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	// Use a short timeout for connection attempts
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	clientOpts := options.Client().ApplyURI(mongoURI).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
-	client, err := mongo.Connect(ctx, clientOpts)
-	if err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Ping to verify connection with timeout
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := client.Ping(pingCtx, nil); err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Use a test-specific database
-	return client.Database("walletconfig_test_" + t.Name())
+// MockWalletConfigStorage is a mock implementation of WalletConfigStorageEngine for testing
+type MockWalletConfigStorage struct {
+	records     map[string]*WalletConfigRecord
+	storeError  error
+	deleteError error
+	findError   error
 }
 
-func cleanupTestDB(t *testing.T, db *mongo.Database) {
-	if db != nil {
-		_ = db.Drop(context.Background())
+func NewMockWalletConfigStorage() *MockWalletConfigStorage {
+	return &MockWalletConfigStorage{
+		records: make(map[string]*WalletConfigRecord),
 	}
+}
+
+func (m *MockWalletConfigStorage) makeKey(txid string, outputIndex int) string {
+	return txid + ":" + string(rune(outputIndex))
+}
+
+func (m *MockWalletConfigStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, registration *WalletConfigRegistration) error {
+	if m.storeError != nil {
+		return m.storeError
+	}
+
+	// Check for duplicates (excluding txid/outputIndex)
+	for _, record := range m.records {
+		if record.Registration.ConfigID == registration.ConfigID &&
+			record.Registration.Name == registration.Name &&
+			record.Registration.Icon == registration.Icon &&
+			record.Registration.WAB == registration.WAB &&
+			record.Registration.Storage == registration.Storage &&
+			record.Registration.Messagebox == registration.Messagebox &&
+			record.Registration.Legal == registration.Legal &&
+			record.Registration.RegistryOperator == registration.RegistryOperator {
+			// Duplicate found, don't insert
+			return nil
+		}
+	}
+
+	key := m.makeKey(txid, outputIndex)
+	m.records[key] = &WalletConfigRecord{
+		Txid:         txid,
+		OutputIndex:  outputIndex,
+		Registration: registration,
+	}
+	return nil
+}
+
+func (m *MockWalletConfigStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
+	if m.deleteError != nil {
+		return m.deleteError
+	}
+	key := m.makeKey(txid, outputIndex)
+	delete(m.records, key)
+	return nil
+}
+
+func (m *MockWalletConfigStorage) FindByConfigID(ctx context.Context, configID string, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.Registration.ConfigID == configID && contains(registryOperators, record.Registration.RegistryOperator) {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return results, nil
+}
+
+func (m *MockWalletConfigStorage) FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		// Simple case-insensitive substring match for testing
+		if strings.Contains(strings.ToLower(record.Registration.Name), strings.ToLower(name)) &&
+			contains(registryOperators, record.Registration.RegistryOperator) {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return results, nil
+}
+
+func (m *MockWalletConfigStorage) FindByWAB(ctx context.Context, wab string, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.Registration.WAB == wab && contains(registryOperators, record.Registration.RegistryOperator) {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return results, nil
+}
+
+func (m *MockWalletConfigStorage) FindByStorage(ctx context.Context, storage string, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.Registration.Storage == storage && contains(registryOperators, record.Registration.RegistryOperator) {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return results, nil
+}
+
+func (m *MockWalletConfigStorage) FindByMessagebox(ctx context.Context, messagebox string, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.Registration.Messagebox == messagebox && contains(registryOperators, record.Registration.RegistryOperator) {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return results, nil
+}
+
+func (m *MockWalletConfigStorage) ListAll(ctx context.Context, registryOperators []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if contains(registryOperators, record.Registration.RegistryOperator) {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return results, nil
+}
+
+// Helper function to check if a slice contains a string
+func contains(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
 }
 
 // makeQuery creates a json.RawMessage from a map
@@ -70,38 +201,23 @@ func makeHashFromHex(hexStr string) *chainhash.Hash {
 }
 
 func TestWalletConfigLookupService_NewInstance(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 	require.NotNil(t, ls)
 	require.NotNil(t, ls.storage)
 }
 
 func TestWalletConfigLookupService_GetDocumentation(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 	docs := ls.GetDocumentation()
 	assert.Contains(t, docs, "WalletConfig Lookup Service")
 	assert.Contains(t, docs, "ls_walletconfig")
 }
 
 func TestWalletConfigLookupService_GetMetaData(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 	meta := ls.GetMetaData()
 	require.NotNil(t, meta)
 	assert.Equal(t, "WalletConfig Lookup Service", meta.Name)
@@ -109,29 +225,17 @@ func TestWalletConfigLookupService_GetMetaData(t *testing.T) {
 }
 
 func TestWalletConfigLookupService_Lookup_NilQuestion(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
-
-	// WalletConfig doesn't check for nil question, so this will panic
-	// We test that the panic occurs as expected
-	assert.Panics(t, func() {
-		_, _ = ls.Lookup(context.Background(), nil)
-	})
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
+	answer, err := ls.Lookup(context.Background(), nil)
+	assert.Error(t, err)
+	assert.Nil(t, answer)
+	assert.Contains(t, err.Error(), "valid query")
 }
 
 func TestWalletConfigLookupService_Lookup_WrongService(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
 		Query:   makeQuery(map[string]interface{}{"configID": "test", "registryOperators": []string{"operator1"}}),
@@ -142,7 +246,7 @@ func TestWalletConfigLookupService_Lookup_WrongService(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, "output-list", answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	// Should return empty results since no records exist
 	results, ok := answer.Result.([]UTXOReference)
@@ -151,13 +255,8 @@ func TestWalletConfigLookupService_Lookup_WrongService(t *testing.T) {
 }
 
 func TestWalletConfigLookupService_Lookup_MissingRegistryOperators(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_walletconfig",
 		Query:   makeQuery(map[string]interface{}{"configID": "test"}),
@@ -169,13 +268,8 @@ func TestWalletConfigLookupService_Lookup_MissingRegistryOperators(t *testing.T)
 }
 
 func TestWalletConfigLookupService_Lookup_ByConfigID(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registration := &WalletConfigRegistration{
@@ -188,7 +282,7 @@ func TestWalletConfigLookupService_Lookup_ByConfigID(t *testing.T) {
 		Legal:            "https://legal.example.com",
 		RegistryOperator: "operator1",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid123", 0, registration)
+	err := storage.StoreRecord(context.Background(), "txid123", 0, registration)
 	require.NoError(t, err)
 
 	// Lookup by configID
@@ -199,7 +293,7 @@ func TestWalletConfigLookupService_Lookup_ByConfigID(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, "output-list", answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -209,13 +303,8 @@ func TestWalletConfigLookupService_Lookup_ByConfigID(t *testing.T) {
 }
 
 func TestWalletConfigLookupService_Lookup_ByName(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registration := &WalletConfigRegistration{
@@ -228,7 +317,7 @@ func TestWalletConfigLookupService_Lookup_ByName(t *testing.T) {
 		Legal:            "https://legal.example.com",
 		RegistryOperator: "operator2",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid456", 0, registration)
+	err := storage.StoreRecord(context.Background(), "txid456", 0, registration)
 	require.NoError(t, err)
 
 	// Lookup by name (fuzzy search)
@@ -239,7 +328,7 @@ func TestWalletConfigLookupService_Lookup_ByName(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, "output-list", answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -249,13 +338,8 @@ func TestWalletConfigLookupService_Lookup_ByName(t *testing.T) {
 }
 
 func TestWalletConfigLookupService_Lookup_ByWAB(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registration := &WalletConfigRegistration{
@@ -268,7 +352,7 @@ func TestWalletConfigLookupService_Lookup_ByWAB(t *testing.T) {
 		Legal:            "https://legal.example.com",
 		RegistryOperator: "operator3",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid789", 0, registration)
+	err := storage.StoreRecord(context.Background(), "txid789", 0, registration)
 	require.NoError(t, err)
 
 	// Lookup by WAB
@@ -279,7 +363,7 @@ func TestWalletConfigLookupService_Lookup_ByWAB(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, "output-list", answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -288,13 +372,8 @@ func TestWalletConfigLookupService_Lookup_ByWAB(t *testing.T) {
 }
 
 func TestWalletConfigLookupService_Lookup_ListAll(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// Store multiple records
 	registration1 := &WalletConfigRegistration{
@@ -307,7 +386,7 @@ func TestWalletConfigLookupService_Lookup_ListAll(t *testing.T) {
 		Legal:            "https://legal1.example.com",
 		RegistryOperator: "operator4",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, registration1)
+	err := storage.StoreRecord(context.Background(), "txid1", 0, registration1)
 	require.NoError(t, err)
 
 	registration2 := &WalletConfigRegistration{
@@ -320,7 +399,7 @@ func TestWalletConfigLookupService_Lookup_ListAll(t *testing.T) {
 		Legal:            "https://legal2.example.com",
 		RegistryOperator: "operator4",
 	}
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0, registration2)
+	err = storage.StoreRecord(context.Background(), "txid2", 0, registration2)
 	require.NoError(t, err)
 
 	// List all configs from operator4
@@ -331,7 +410,7 @@ func TestWalletConfigLookupService_Lookup_ListAll(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, "output-list", answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -339,13 +418,8 @@ func TestWalletConfigLookupService_Lookup_ListAll(t *testing.T) {
 }
 
 func TestWalletConfigLookupService_OutputSpent(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registration := &WalletConfigRegistration{
@@ -359,11 +433,11 @@ func TestWalletConfigLookupService_OutputSpent(t *testing.T) {
 		RegistryOperator: "operator5",
 	}
 	txidHex := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 1, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 1, registration)
 	require.NoError(t, err)
 
 	// Verify it exists
-	results, err := ls.storage.FindByConfigID(context.Background(), "config-spent", []string{"operator5"})
+	results, err := storage.FindByConfigID(context.Background(), "config-spent", []string{"operator5"})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -382,19 +456,14 @@ func TestWalletConfigLookupService_OutputSpent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err = ls.storage.FindByConfigID(context.Background(), "config-spent", []string{"operator5"})
+	results, err = storage.FindByConfigID(context.Background(), "config-spent", []string{"operator5"})
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestWalletConfigLookupService_OutputSpent_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registration := &WalletConfigRegistration{
@@ -408,7 +477,7 @@ func TestWalletConfigLookupService_OutputSpent_WrongTopic(t *testing.T) {
 		RegistryOperator: "operator6",
 	}
 	txidHex := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
@@ -426,19 +495,14 @@ func TestWalletConfigLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it still exists (was not deleted)
-	results, err := ls.storage.FindByConfigID(context.Background(), "config-persist", []string{"operator6"})
+	results, err := storage.FindByConfigID(context.Background(), "config-persist", []string{"operator6"})
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestWalletConfigLookupService_OutputEvicted(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registration := &WalletConfigRegistration{
@@ -452,7 +516,7 @@ func TestWalletConfigLookupService_OutputEvicted(t *testing.T) {
 		RegistryOperator: "operator7",
 	}
 	txidHex := "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Evict the output
@@ -467,19 +531,14 @@ func TestWalletConfigLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err := ls.storage.FindByConfigID(context.Background(), "config-evict", []string{"operator7"})
+	results, err := storage.FindByConfigID(context.Background(), "config-evict", []string{"operator7"})
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestWalletConfigLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registration := &WalletConfigRegistration{
@@ -493,7 +552,7 @@ func TestWalletConfigLookupService_OutputNoLongerRetainedInHistory(t *testing.T)
 		RegistryOperator: "operator8",
 	}
 	txidHex := "1111111111111111111111111111111111111111111111111111111111111111"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
@@ -508,19 +567,14 @@ func TestWalletConfigLookupService_OutputNoLongerRetainedInHistory(t *testing.T)
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err := ls.storage.FindByConfigID(context.Background(), "config-retain", []string{"operator8"})
+	results, err := storage.FindByConfigID(context.Background(), "config-retain", []string{"operator8"})
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestWalletConfigLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// Store a record first
 	registration := &WalletConfigRegistration{
@@ -534,7 +588,7 @@ func TestWalletConfigLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t 
 		RegistryOperator: "operator9",
 	}
 	txidHex := "2222222222222222222222222222222222222222222222222222222222222222"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, registration)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, registration)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory with wrong topic
@@ -549,19 +603,14 @@ func TestWalletConfigLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t 
 	require.NoError(t, err)
 
 	// Verify it still exists (was not deleted)
-	results, err := ls.storage.FindByConfigID(context.Background(), "config-retain2", []string{"operator9"})
+	results, err := storage.FindByConfigID(context.Background(), "config-retain2", []string{"operator9"})
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestWalletConfigLookupService_OutputBlockHeightUpdated(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewWalletConfigLookupService(db)
+	storage := NewMockWalletConfigStorage()
+	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// OutputBlockHeightUpdated should not do anything for WalletConfig
 	txidHash := makeHashFromHex("3333333333333333333333333333333333333333333333333333333333333333")

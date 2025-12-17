@@ -3,54 +3,165 @@ package supplychain
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
+	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// getTestMongoDB returns a MongoDB database for testing, or nil if MongoDB is not available
-func getTestMongoDB(t *testing.T) *mongo.Database {
-	mongoURI := os.Getenv("MONGODB_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	// Use a short timeout for connection attempts (2 seconds)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	clientOpts := options.Client().ApplyURI(mongoURI).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
-	client, err := mongo.Connect(ctx, clientOpts)
-	if err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Ping to verify connection with timeout
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := client.Ping(pingCtx, nil); err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Use a test-specific database
-	return client.Database("supplychain_test_" + t.Name())
+// MockSupplyChainStorage is a mock implementation of SupplyChainStorageEngine for testing
+type MockSupplyChainStorage struct {
+	records      map[string]SupplyChainRecord
+	storeError   error
+	spendError   error
+	deleteError  error
+	findError    error
+	findAllError error
 }
 
-func cleanupTestDB(t *testing.T, db *mongo.Database) {
-	if db != nil {
-		_ = db.Drop(context.Background())
+func NewMockSupplyChainStorage() *MockSupplyChainStorage {
+	return &MockSupplyChainStorage{
+		records: make(map[string]SupplyChainRecord),
 	}
+}
+
+func (m *MockSupplyChainStorage) makeKey(txid string, outputIndex int) string {
+	return txid + ":" + string(rune(outputIndex))
+}
+
+func (m *MockSupplyChainStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, offChainValues map[string]interface{}) error {
+	if m.storeError != nil {
+		return m.storeError
+	}
+	key := m.makeKey(txid, outputIndex)
+	m.records[key] = SupplyChainRecord{
+		Txid:           txid,
+		OutputIndex:    outputIndex,
+		OffChainValues: offChainValues,
+		CreatedAt:      time.Now(),
+	}
+	return nil
+}
+
+func (m *MockSupplyChainStorage) SpendRecord(ctx context.Context, txid string, outputIndex int, spendingTxid string) error {
+	if m.spendError != nil {
+		return m.spendError
+	}
+	key := m.makeKey(txid, outputIndex)
+	if record, ok := m.records[key]; ok {
+		record.SpendingTxid = spendingTxid
+		m.records[key] = record
+	}
+	return nil
+}
+
+func (m *MockSupplyChainStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
+	if m.deleteError != nil {
+		return m.deleteError
+	}
+	key := m.makeKey(txid, outputIndex)
+	delete(m.records, key)
+	return nil
+}
+
+func (m *MockSupplyChainStorage) FindByChainID(ctx context.Context, chainID string, limit, skip int) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	if chainID == "" {
+		return []UTXOReference{}, nil
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.OffChainValues != nil {
+			if cid, ok := record.OffChainValues["chainId"].(string); ok && cid == chainID {
+				results = append(results, UTXOReference{
+					Txid:        record.Txid,
+					OutputIndex: record.OutputIndex,
+				})
+			}
+		}
+	}
+
+	// Apply skip and limit
+	if skip >= len(results) {
+		return []UTXOReference{}, nil
+	}
+	results = results[skip:]
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
+}
+
+func (m *MockSupplyChainStorage) FindByTxid(ctx context.Context, txid string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	if txid == "" {
+		return []UTXOReference{}, nil
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.Txid == txid {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+
+	// Apply skip and limit
+	if skip >= len(results) {
+		return []UTXOReference{}, nil
+	}
+	results = results[skip:]
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
+}
+
+func (m *MockSupplyChainStorage) FindAll(ctx context.Context, limit, skip int, startDate, endDate *time.Time, sortOrder string) ([]UTXOReference, error) {
+	if m.findAllError != nil {
+		return nil, m.findAllError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		// Apply date filters
+		if startDate != nil && record.CreatedAt.Before(*startDate) {
+			continue
+		}
+		if endDate != nil && record.CreatedAt.After(*endDate) {
+			continue
+		}
+		results = append(results, UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		})
+	}
+
+	// Apply skip and limit
+	if skip >= len(results) {
+		return []UTXOReference{}, nil
+	}
+	results = results[skip:]
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
 }
 
 // makeQuery creates a json.RawMessage from a map
@@ -70,25 +181,15 @@ func makeHashFromHex(hexStr string) *chainhash.Hash {
 }
 
 func TestSupplyChainLookupService_NewInstance(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 	require.NotNil(t, ls)
 	require.NotNil(t, ls.storage)
 }
 
 func TestSupplyChainLookupService_GetDocumentation(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 	docs := ls.GetDocumentation()
 	assert.Contains(t, docs, "SupplyChain Lookup Service")
 	assert.Contains(t, docs, "ls_supplychain")
@@ -96,13 +197,8 @@ func TestSupplyChainLookupService_GetDocumentation(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_GetMetaData(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 	meta := ls.GetMetaData()
 	require.NotNil(t, meta)
 	assert.Equal(t, "SupplyChain Lookup Service", meta.Name)
@@ -110,26 +206,16 @@ func TestSupplyChainLookupService_GetMetaData(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_Lookup_NilQuestion(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 	answer, err := ls.Lookup(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Nil(t, answer)
 }
 
 func TestSupplyChainLookupService_Lookup_WrongService(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
 		Query:   makeQuery(map[string]interface{}{"chainId": "test"}),
@@ -141,13 +227,8 @@ func TestSupplyChainLookupService_Lookup_WrongService(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_Lookup_ByChainID(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Store a record first
 	chainID := "supply-chain-123"
@@ -155,7 +236,7 @@ func TestSupplyChainLookupService_Lookup_ByChainID(t *testing.T) {
 		"chainId": chainID,
 		"data":    "test data",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid123", 0, offChainValues)
+	err := storage.StoreRecord(context.Background(), "txid123", 0, offChainValues)
 	require.NoError(t, err)
 
 	// Lookup by chainId
@@ -176,13 +257,8 @@ func TestSupplyChainLookupService_Lookup_ByChainID(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_Lookup_ByTxid(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Store multiple records with the same txid
 	offChainValues1 := map[string]interface{}{
@@ -193,9 +269,9 @@ func TestSupplyChainLookupService_Lookup_ByTxid(t *testing.T) {
 		"chainId": "chain2",
 		"data":    "test data 2",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid456", 0, offChainValues1)
+	err := storage.StoreRecord(context.Background(), "txid456", 0, offChainValues1)
 	require.NoError(t, err)
-	err = ls.storage.StoreRecord(context.Background(), "txid456", 1, offChainValues2)
+	err = storage.StoreRecord(context.Background(), "txid456", 1, offChainValues2)
 	require.NoError(t, err)
 
 	// Lookup by txid
@@ -213,13 +289,8 @@ func TestSupplyChainLookupService_Lookup_ByTxid(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_Lookup_WithPagination(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Store multiple records
 	for i := 0; i < 10; i++ {
@@ -227,7 +298,7 @@ func TestSupplyChainLookupService_Lookup_WithPagination(t *testing.T) {
 			"chainId": "test-chain",
 			"index":   i,
 		}
-		err := ls.storage.StoreRecord(context.Background(), "txid", i, offChainValues)
+		err := storage.StoreRecord(context.Background(), "txid", i, offChainValues)
 		require.NoError(t, err)
 	}
 
@@ -246,19 +317,14 @@ func TestSupplyChainLookupService_Lookup_WithPagination(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_Lookup_WithDateRange(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Store a record
 	offChainValues := map[string]interface{}{
 		"chainId": "date-test",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid789", 0, offChainValues)
+	err := storage.StoreRecord(context.Background(), "txid789", 0, offChainValues)
 	require.NoError(t, err)
 
 	// Lookup with date range (today's date range)
@@ -278,13 +344,8 @@ func TestSupplyChainLookupService_Lookup_WithDateRange(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_Lookup_EmptyResults(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Lookup non-existent chainId
 	question := &lookup.LookupQuestion{
@@ -302,13 +363,8 @@ func TestSupplyChainLookupService_Lookup_EmptyResults(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_Lookup_InvalidQuery(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	tests := []struct {
 		name    string
@@ -362,18 +418,14 @@ func TestSupplyChainLookupService_Lookup_InvalidQuery(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_OutputAdmittedByTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Create a valid transaction
 	tx := transaction.NewTransaction()
 	tx.AddOutput(&transaction.TransactionOutput{
-		Satoshis: 1000,
+		Satoshis:      1000,
+		LockingScript: &script.Script{},
 	})
 
 	beef, err := tx.BEEF()
@@ -392,23 +444,19 @@ func TestSupplyChainLookupService_OutputAdmittedByTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the record was stored
-	results, err := ls.storage.FindByChainID(context.Background(), "test-chain", 10, 0)
+	results, err := storage.FindByChainID(context.Background(), "test-chain", 10, 0)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestSupplyChainLookupService_OutputAdmittedByTopic_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	tx := transaction.NewTransaction()
 	tx.AddOutput(&transaction.TransactionOutput{
-		Satoshis: 1000,
+		Satoshis:      1000,
+		LockingScript: &script.Script{},
 	})
 
 	beef, err := tx.BEEF()
@@ -427,23 +475,19 @@ func TestSupplyChainLookupService_OutputAdmittedByTopic_WrongTopic(t *testing.T)
 	require.NoError(t, err)
 
 	// Verify no record was stored
-	results, err := ls.storage.FindByChainID(context.Background(), "test-chain", 10, 0)
+	results, err := storage.FindByChainID(context.Background(), "test-chain", 10, 0)
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestSupplyChainLookupService_OutputAdmittedByTopic_NoOffChainValues(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	tx := transaction.NewTransaction()
 	tx.AddOutput(&transaction.TransactionOutput{
-		Satoshis: 1000,
+		Satoshis:      1000,
+		LockingScript: &script.Script{},
 	})
 
 	beef, err := tx.BEEF()
@@ -462,23 +506,19 @@ func TestSupplyChainLookupService_OutputAdmittedByTopic_NoOffChainValues(t *test
 
 	// Verify the record was stored with txid as chainId
 	txid := tx.TxID().String()
-	results, err := ls.storage.FindByChainID(context.Background(), txid, 10, 0)
+	results, err := storage.FindByChainID(context.Background(), txid, 10, 0)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestSupplyChainLookupService_OutputAdmittedByTopic_MissingChainID(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	tx := transaction.NewTransaction()
 	tx.AddOutput(&transaction.TransactionOutput{
-		Satoshis: 1000,
+		Satoshis:      1000,
+		LockingScript: &script.Script{},
 	})
 
 	beef, err := tx.BEEF()
@@ -499,24 +539,19 @@ func TestSupplyChainLookupService_OutputAdmittedByTopic_MissingChainID(t *testin
 }
 
 func TestSupplyChainLookupService_OutputSpent(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 	offChainValues := map[string]interface{}{
 		"chainId": "test-chain",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 1, offChainValues)
+	err := storage.StoreRecord(context.Background(), txidHex, 1, offChainValues)
 	require.NoError(t, err)
 
 	// Verify it exists
-	results, err := ls.storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
+	results, err := storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -541,20 +576,15 @@ func TestSupplyChainLookupService_OutputSpent(t *testing.T) {
 }
 
 func TestSupplyChainLookupService_OutputSpent_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	offChainValues := map[string]interface{}{
 		"chainId": "test-chain",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, offChainValues)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, offChainValues)
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
@@ -574,26 +604,21 @@ func TestSupplyChainLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it still exists (was not affected)
-	results, err := ls.storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
+	results, err := storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestSupplyChainLookupService_OutputEvicted(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
 	offChainValues := map[string]interface{}{
 		"chainId": "test-chain",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, offChainValues)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, offChainValues)
 	require.NoError(t, err)
 
 	// Evict the output
@@ -608,26 +633,21 @@ func TestSupplyChainLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err := ls.storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
+	results, err := storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestSupplyChainLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "1111111122222222333333334444444455555555666666667777777788888888"
 	offChainValues := map[string]interface{}{
 		"chainId": "test-chain",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, offChainValues)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, offChainValues)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
@@ -642,26 +662,21 @@ func TestSupplyChainLookupService_OutputNoLongerRetainedInHistory(t *testing.T) 
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err := ls.storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
+	results, err := storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestSupplyChainLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "2222222233333333444444445555555566666666777777778888888899999999"
 	offChainValues := map[string]interface{}{
 		"chainId": "test-chain",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, offChainValues)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, offChainValues)
 	require.NoError(t, err)
 
 	// Call with wrong topic
@@ -676,19 +691,14 @@ func TestSupplyChainLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *
 	require.NoError(t, err)
 
 	// Verify it still exists (was not affected)
-	results, err := ls.storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
+	results, err := storage.FindByTxid(context.Background(), txidHex, 10, 0, "desc")
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestSupplyChainLookupService_OutputBlockHeightUpdated(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewSupplyChainLookupService(db)
+	storage := NewMockSupplyChainStorage()
+	ls := NewSupplyChainLookupServiceWithStorage(storage)
 
 	// This is a no-op for SupplyChain, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"

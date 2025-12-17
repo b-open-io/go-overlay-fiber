@@ -9,11 +9,23 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// AnyStorageEngine defines the interface for Any storage operations
+type AnyStorageEngine interface {
+	StoreRecord(txid string, outputIndex int) error
+	SpendRecord(txid string, outputIndex int, spendingTxid string) error
+	DeleteRecord(txid string, outputIndex int) error
+	FindByTxid(txid string) (*UTXOReference, error)
+	FindAll(limit int, skip int, startDate *time.Time, endDate *time.Time, sortOrder string) ([]UTXOReference, error)
+}
+
 // AnyStorage implements a storage engine for the Any lookup service
 type AnyStorage struct {
 	db      *mongo.Database
 	records *mongo.Collection
 }
+
+// Ensure AnyStorage implements AnyStorageEngine
+var _ AnyStorageEngine = (*AnyStorage)(nil)
 
 // NewAnyStorage constructs a new AnyStorage instance
 func NewAnyStorage(db *mongo.Database) *AnyStorage {

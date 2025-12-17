@@ -62,13 +62,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 
 // FractionalizeLookupService implements a lookup service for Fractionalize protocol
 type FractionalizeLookupService struct {
-	storage *FractionalizeStorage
+	storage FractionalizeStorageEngine
 }
 
 // NewFractionalizeLookupService creates a new FractionalizeLookupService instance
 func NewFractionalizeLookupService(db *mongo.Database) *FractionalizeLookupService {
 	return &FractionalizeLookupService{
 		storage: NewFractionalizeStorage(db),
+	}
+}
+
+// NewFractionalizeLookupServiceWithStorage creates a new FractionalizeLookupService with a custom storage engine
+func NewFractionalizeLookupServiceWithStorage(storage FractionalizeStorageEngine) *FractionalizeLookupService {
+	return &FractionalizeLookupService{
+		storage: storage,
 	}
 }
 
@@ -168,6 +175,10 @@ func (ls *FractionalizeLookupService) OutputBlockHeightUpdated(ctx context.Conte
 
 // Lookup performs a lookup query
 func (ls *FractionalizeLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	if question == nil {
+		return nil, fmt.Errorf("a valid query must be provided")
+	}
+
 	slog.Debug("Fractionalize lookup", "query", string(question.Query))
 
 	// Parse the query
@@ -234,7 +245,7 @@ func (ls *FractionalizeLookupService) Lookup(ctx context.Context, question *look
 	slog.Debug("Fractionalize lookup completed")
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerType("output-list"),
 		Result: results,
 	}, nil
 }

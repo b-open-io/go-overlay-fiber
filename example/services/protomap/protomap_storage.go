@@ -9,10 +9,21 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// ProtoMapStorageEngine defines the interface for ProtoMap storage operations
+type ProtoMapStorageEngine interface {
+	StoreRecord(ctx context.Context, txid string, outputIndex int, registration ProtoMapRegistration) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error)
+	FindByProtocolID(ctx context.Context, protocolID ProtocolID, registryOperators []string) ([]UTXOReference, error)
+}
+
 // ProtoMapStorage handles ProtoMap record storage in MongoDB
 type ProtoMapStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure ProtoMapStorage implements ProtoMapStorageEngine
+var _ ProtoMapStorageEngine = (*ProtoMapStorage)(nil)
 
 // NewProtoMapStorage creates a new ProtoMap storage instance
 func NewProtoMapStorage(db *mongo.Database) *ProtoMapStorage {

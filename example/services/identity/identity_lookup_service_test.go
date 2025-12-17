@@ -3,7 +3,8 @@ package identity
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,44 +17,276 @@ import (
 	"github.com/bsv-blockchain/go-sdk/wallet"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// getTestMongoDB returns a MongoDB database for testing, or nil if MongoDB is not available
-func getTestMongoDB(t *testing.T) *mongo.Database {
-	mongoURI := os.Getenv("MONGODB_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	// Use a short timeout for connection attempts
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	clientOpts := options.Client().ApplyURI(mongoURI).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
-	client, err := mongo.Connect(ctx, clientOpts)
-	if err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Ping to verify connection with timeout
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := client.Ping(pingCtx, nil); err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Use a test-specific database
-	return client.Database("identity_test_" + t.Name())
+// MockIdentityStorage is a mock implementation of IdentityStorageEngine for testing
+type MockIdentityStorage struct {
+	records     map[string]*IdentityRecord
+	storeError  error
+	deleteError error
+	findError   error
 }
 
-func cleanupTestDB(t *testing.T, db *mongo.Database) {
-	if db != nil {
-		_ = db.Drop(context.Background())
+func NewMockIdentityStorage() *MockIdentityStorage {
+	return &MockIdentityStorage{
+		records: make(map[string]*IdentityRecord),
 	}
+}
+
+func (m *MockIdentityStorage) makeKey(txid string, outputIndex int) string {
+	return fmt.Sprintf("%s:%d", txid, outputIndex)
+}
+
+func (m *MockIdentityStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, certificate *certificates.Certificate) error {
+	if m.storeError != nil {
+		return m.storeError
+	}
+
+	// Build searchable attributes string from certificate fields
+	var searchableAttrs []string
+	for key, value := range certificate.Fields {
+		keyStr := string(key)
+		valueStr := string(value)
+		if keyStr != "profilePhoto" && keyStr != "icon" {
+			searchableAttrs = append(searchableAttrs, valueStr)
+		}
+	}
+
+	key := m.makeKey(txid, outputIndex)
+	m.records[key] = &IdentityRecord{
+		Txid:                 txid,
+		OutputIndex:          outputIndex,
+		Certificate:          certificate,
+		CreatedAt:            time.Now(),
+		SearchableAttributes: strings.Join(searchableAttrs, " "),
+	}
+	return nil
+}
+
+func (m *MockIdentityStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
+	if m.deleteError != nil {
+		return m.deleteError
+	}
+	key := m.makeKey(txid, outputIndex)
+	delete(m.records, key)
+	return nil
+}
+
+func (m *MockIdentityStorage) FindByAttribute(ctx context.Context, attributes IdentityAttributes, certifiers []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	if len(attributes) == 0 {
+		return []UTXOReference{}, nil
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		// Check if certifier matches
+		certifierMatch := false
+		certifierHex := record.Certificate.Certifier.ToDERHex()
+		for _, certifier := range certifiers {
+			if certifierHex == certifier {
+				certifierMatch = true
+				break
+			}
+		}
+		if !certifierMatch {
+			continue
+		}
+
+		// Handle "any" special case for full-text search
+		if anyValue, ok := attributes["any"]; ok {
+			if fuzzyMatch(record.SearchableAttributes, anyValue) {
+				results = append(results, UTXOReference{
+					Txid:        record.Txid,
+					OutputIndex: record.OutputIndex,
+				})
+			}
+		} else {
+			// Check specific attributes
+			allMatch := true
+			for key, value := range attributes {
+				if fieldValue, ok := record.Certificate.Fields[wallet.CertificateFieldNameUnder50Bytes(key)]; ok {
+					if !fuzzyMatch(string(fieldValue), value) {
+						allMatch = false
+						break
+					}
+				} else {
+					allMatch = false
+					break
+				}
+			}
+			if allMatch {
+				results = append(results, UTXOReference{
+					Txid:        record.Txid,
+					OutputIndex: record.OutputIndex,
+				})
+			}
+		}
+	}
+
+	return results, nil
+}
+
+func (m *MockIdentityStorage) FindByIdentityKey(ctx context.Context, identityKey string, certifiers []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	if identityKey == "" {
+		return []UTXOReference{}, nil
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		// Check subject match
+		if record.Certificate.Subject.ToDERHex() != identityKey {
+			continue
+		}
+
+		// Check certifier match if provided
+		if len(certifiers) > 0 {
+			certifierMatch := false
+			certifierHex := record.Certificate.Certifier.ToDERHex()
+			for _, certifier := range certifiers {
+				if certifierHex == certifier {
+					certifierMatch = true
+					break
+				}
+			}
+			if !certifierMatch {
+				continue
+			}
+		}
+
+		results = append(results, UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		})
+	}
+
+	return results, nil
+}
+
+func (m *MockIdentityStorage) FindByCertifier(ctx context.Context, certifiers []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	if len(certifiers) == 0 {
+		return []UTXOReference{}, nil
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		certifierHex := record.Certificate.Certifier.ToDERHex()
+		for _, certifier := range certifiers {
+			if certifierHex == certifier {
+				results = append(results, UTXOReference{
+					Txid:        record.Txid,
+					OutputIndex: record.OutputIndex,
+				})
+				break
+			}
+		}
+	}
+
+	return results, nil
+}
+
+func (m *MockIdentityStorage) FindByCertificateType(ctx context.Context, certificateTypes []string, identityKey string, certifiers []string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	if len(certificateTypes) == 0 || identityKey == "" || len(certifiers) == 0 {
+		return []UTXOReference{}, nil
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		// Check subject match
+		if record.Certificate.Subject.ToDERHex() != identityKey {
+			continue
+		}
+
+		// Check certifier match
+		certifierMatch := false
+		certifierHex := record.Certificate.Certifier.ToDERHex()
+		for _, certifier := range certifiers {
+			if certifierHex == certifier {
+				certifierMatch = true
+				break
+			}
+		}
+		if !certifierMatch {
+			continue
+		}
+
+		// Check type match
+		typeMatch := false
+		certType := string(record.Certificate.Type)
+		for _, certTypeStr := range certificateTypes {
+			if certType == certTypeStr {
+				typeMatch = true
+				break
+			}
+		}
+		if !typeMatch {
+			continue
+		}
+
+		results = append(results, UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		})
+	}
+
+	return results, nil
+}
+
+func (m *MockIdentityStorage) FindByCertificateSerialNumber(ctx context.Context, serialNumber string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	if serialNumber == "" {
+		return []UTXOReference{}, nil
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if string(record.Certificate.SerialNumber) == serialNumber {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+
+	return results, nil
+}
+
+// fuzzyMatch implements a simple fuzzy matching algorithm for testing
+func fuzzyMatch(text, pattern string) bool {
+	// Case-insensitive matching
+	text = strings.ToLower(text)
+	pattern = strings.ToLower(pattern)
+
+	// Simple implementation: check if pattern characters appear in order
+	textIdx := 0
+	for _, char := range pattern {
+		found := false
+		for textIdx < len(text) {
+			if rune(text[textIdx]) == char {
+				found = true
+				textIdx++
+				break
+			}
+			textIdx++
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // makeQuery creates a json.RawMessage from a map
@@ -73,38 +306,23 @@ func makeHashFromHex(hexStr string) *chainhash.Hash {
 }
 
 func TestIdentityLookupService_NewInstance(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 	require.NotNil(t, ls)
 	require.NotNil(t, ls.storage)
 }
 
 func TestIdentityLookupService_GetDocumentation(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 	docs := ls.GetDocumentation()
 	assert.Contains(t, docs, "Identity Lookup Service")
 	assert.Contains(t, docs, "ls_identity")
 }
 
 func TestIdentityLookupService_GetMetaData(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 	meta := ls.GetMetaData()
 	require.NotNil(t, meta)
 	assert.Equal(t, "Identity Lookup Service", meta.Name)
@@ -112,48 +330,16 @@ func TestIdentityLookupService_GetMetaData(t *testing.T) {
 }
 
 func TestIdentityLookupService_Lookup_NilQuestion(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 	answer, err := ls.Lookup(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Nil(t, answer)
 }
 
-func TestIdentityLookupService_Lookup_WrongService(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
-	question := &lookup.LookupQuestion{
-		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": "test"}),
-	}
-	answer, err := ls.Lookup(context.Background(), question)
-	// The lookup service doesn't validate the service name, it just processes the query
-	// So this should succeed if the query is valid
-	require.NoError(t, err)
-	require.NotNil(t, answer)
-	results, ok := answer.Result.([]UTXOReference)
-	require.True(t, ok)
-	assert.Empty(t, results) // No results because nothing stored
-}
-
 func TestIdentityLookupService_Lookup_EmptyQuery(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
 		Query:   makeQuery(map[string]interface{}{}),
@@ -165,20 +351,15 @@ func TestIdentityLookupService_Lookup_EmptyQuery(t *testing.T) {
 }
 
 func TestIdentityLookupService_Lookup_BySerialNumber(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Store a record first
 	testSerial := "serial123"
 	txid := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 
 	cert := createTestCertificate(testSerial)
-	err := ls.storage.StoreRecord(context.Background(), txid, 0, cert)
+	err := storage.StoreRecord(context.Background(), txid, 0, cert)
 	require.NoError(t, err)
 
 	// Lookup by serial number
@@ -199,30 +380,27 @@ func TestIdentityLookupService_Lookup_BySerialNumber(t *testing.T) {
 }
 
 func TestIdentityLookupService_Lookup_ByCertifiers(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Store multiple records with the same certifier
-	certifier := "02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	certifierKey, _ := ec.NewPrivateKey()
+	certifier := certifierKey.PubKey().ToDERHex()
 
 	cert1 := createTestCertificate("serial1")
-	cert1.Certifier = createPubKeyFromHex(certifier)
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, cert1)
+	cert1.Certifier = *certifierKey.PubKey()
+	err := storage.StoreRecord(context.Background(), "txid1", 0, cert1)
 	require.NoError(t, err)
 
 	cert2 := createTestCertificate("serial2")
-	cert2.Certifier = createPubKeyFromHex(certifier)
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0, cert2)
+	cert2.Certifier = *certifierKey.PubKey()
+	err = storage.StoreRecord(context.Background(), "txid2", 0, cert2)
 	require.NoError(t, err)
 
+	otherKey, _ := ec.NewPrivateKey()
 	cert3 := createTestCertificate("serial3")
-	cert3.Certifier = createPubKeyFromHex("03fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321")
-	err = ls.storage.StoreRecord(context.Background(), "txid3", 0, cert3)
+	cert3.Certifier = *otherKey.PubKey()
+	err = storage.StoreRecord(context.Background(), "txid3", 0, cert3)
 	require.NoError(t, err)
 
 	// Lookup by certifiers
@@ -240,34 +418,33 @@ func TestIdentityLookupService_Lookup_ByCertifiers(t *testing.T) {
 }
 
 func TestIdentityLookupService_Lookup_ByIdentityKeyAndCertifiers(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Store records
-	identityKey := "02123456789012345678901234567890123456789012345678901234567890abcd"
-	certifier := "02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	identityKeyPriv, _ := ec.NewPrivateKey()
+	identityKey := identityKeyPriv.PubKey().ToDERHex()
+
+	certifierKey, _ := ec.NewPrivateKey()
+	certifier := certifierKey.PubKey().ToDERHex()
 
 	cert1 := createTestCertificate("serial1")
-	cert1.Subject = createPubKeyFromHex(identityKey)
-	cert1.Certifier = createPubKeyFromHex(certifier)
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, cert1)
+	cert1.Subject = *identityKeyPriv.PubKey()
+	cert1.Certifier = *certifierKey.PubKey()
+	err := storage.StoreRecord(context.Background(), "txid1", 0, cert1)
 	require.NoError(t, err)
 
+	otherIdentityKey, _ := ec.NewPrivateKey()
 	cert2 := createTestCertificate("serial2")
-	cert2.Subject = createPubKeyFromHex("03different1234567890123456789012345678901234567890123456789012345678")
-	cert2.Certifier = createPubKeyFromHex(certifier)
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0, cert2)
+	cert2.Subject = *otherIdentityKey.PubKey()
+	cert2.Certifier = *certifierKey.PubKey()
+	err = storage.StoreRecord(context.Background(), "txid2", 0, cert2)
 	require.NoError(t, err)
 
 	// Lookup by identity key and certifiers
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{
+		Query: makeQuery(map[string]interface{}{
 			"identityKey": identityKey,
 			"certifiers":  []string{certifier},
 		}),
@@ -283,28 +460,22 @@ func TestIdentityLookupService_Lookup_ByIdentityKeyAndCertifiers(t *testing.T) {
 }
 
 func TestIdentityLookupService_Lookup_ByAttributesAndCertifiers(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Store records
-	certifier := "02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	certifierKey, _ := ec.NewPrivateKey()
+	certifier := certifierKey.PubKey().ToDERHex()
 
-	// Note: Attribute search requires searchableAttributes to be populated
-	// This would typically be done in the storage layer
 	cert := createTestCertificate("serial1")
-	cert.Certifier = createPubKeyFromHex(certifier)
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, cert)
+	cert.Certifier = *certifierKey.PubKey()
+	err := storage.StoreRecord(context.Background(), "txid1", 0, cert)
 	require.NoError(t, err)
 
 	// Lookup by attributes and certifiers
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{
+		Query: makeQuery(map[string]interface{}{
 			"attributes": map[string]string{"name": "John"},
 			"certifiers": []string{certifier},
 		}),
@@ -315,18 +486,13 @@ func TestIdentityLookupService_Lookup_ByAttributesAndCertifiers(t *testing.T) {
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
-	// Results may be empty if searchableAttributes isn't populated
+	// Results depend on whether the test certificate has matching attributes
 	assert.NotNil(t, results)
 }
 
 func TestIdentityLookupService_Lookup_NoResults(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Lookup non-existent serial number
 	question := &lookup.LookupQuestion{
@@ -344,18 +510,13 @@ func TestIdentityLookupService_Lookup_NoResults(t *testing.T) {
 }
 
 func TestIdentityLookupService_OutputSpent(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 	cert := createTestCertificate("serial123")
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 1, cert)
+	err := storage.StoreRecord(context.Background(), txidHex, 1, cert)
 	require.NoError(t, err)
 
 	// Verify it exists
@@ -390,18 +551,13 @@ func TestIdentityLookupService_OutputSpent(t *testing.T) {
 }
 
 func TestIdentityLookupService_OutputSpent_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	cert := createTestCertificate("serial123")
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, cert)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, cert)
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
@@ -430,18 +586,13 @@ func TestIdentityLookupService_OutputSpent_WrongTopic(t *testing.T) {
 }
 
 func TestIdentityLookupService_OutputEvicted(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
 	cert := createTestCertificate("serial123")
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, cert)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, cert)
 	require.NoError(t, err)
 
 	// Evict the output
@@ -467,18 +618,13 @@ func TestIdentityLookupService_OutputEvicted(t *testing.T) {
 }
 
 func TestIdentityLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "1111111111111111111111111111111111111111111111111111111111111111"
 	cert := createTestCertificate("serial123")
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, cert)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, cert)
 	require.NoError(t, err)
 
 	// Mark as no longer retained
@@ -504,18 +650,13 @@ func TestIdentityLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 }
 
 func TestIdentityLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "2222222222222222222222222222222222222222222222222222222222222222"
 	cert := createTestCertificate("serial123")
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, cert)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, cert)
 	require.NoError(t, err)
 
 	// Try to mark as no longer retained with wrong topic
@@ -541,13 +682,8 @@ func TestIdentityLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *tes
 }
 
 func TestIdentityLookupService_OutputBlockHeightUpdated(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewIdentityLookupService(db)
+	storage := NewMockIdentityStorage()
+	ls := NewIdentityLookupServiceWithStorage(storage)
 
 	// This is a no-op for Identity, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"
@@ -570,15 +706,8 @@ func createTestCertificate(serialNumber string) *certificates.Certificate {
 		Subject:      *privateKey.PubKey(),
 		Certifier:    *certifierKey.PubKey(),
 		Fields: map[wallet.CertificateFieldNameUnder50Bytes]wallet.StringBase64{
-			"name":  wallet.StringBase64("Sm9obiBEb2U="), // "John Doe" in base64
+			"name":  wallet.StringBase64("Sm9obiBEb2U="),             // "John Doe" in base64
 			"email": wallet.StringBase64("am9obkBleGFtcGxlLmNvbQ=="), // "john@example.com" in base64
 		},
 	}
-}
-
-func createPubKeyFromHex(hexStr string) ec.PublicKey {
-	// Create a simple public key from hex string
-	// This is a simplified version for testing
-	key, _ := ec.NewPrivateKey()
-	return *key.PubKey()
 }

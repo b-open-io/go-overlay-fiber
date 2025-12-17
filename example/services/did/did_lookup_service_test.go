@@ -3,7 +3,8 @@ package did
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,44 +15,96 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// getTestMongoDB returns a MongoDB database for testing, or nil if MongoDB is not available
-func getTestMongoDB(t *testing.T) *mongo.Database {
-	mongoURI := os.Getenv("MONGODB_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	// Use a short timeout for connection attempts
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	clientOpts := options.Client().ApplyURI(mongoURI).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
-	client, err := mongo.Connect(ctx, clientOpts)
-	if err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Ping to verify connection with timeout
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := client.Ping(pingCtx, nil); err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Use a test-specific database
-	return client.Database("did_test_" + t.Name())
+// MockDIDStorage is a mock implementation of DIDStorageEngine for testing
+type MockDIDStorage struct {
+	records     map[string]DIDRecord
+	storeError  error
+	deleteError error
+	findError   error
 }
 
-func cleanupTestDB(t *testing.T, db *mongo.Database) {
-	if db != nil {
-		_ = db.Drop(context.Background())
+func NewMockDIDStorage() *MockDIDStorage {
+	return &MockDIDStorage{
+		records: make(map[string]DIDRecord),
 	}
+}
+
+func (m *MockDIDStorage) makeKey(txid string, outputIndex int) string {
+	return fmt.Sprintf("%s:%d", txid, outputIndex)
+}
+
+func (m *MockDIDStorage) StoreRecord(txid string, outputIndex int, serialNumber string) error {
+	if m.storeError != nil {
+		return m.storeError
+	}
+	key := m.makeKey(txid, outputIndex)
+	m.records[key] = DIDRecord{
+		Txid:         txid,
+		OutputIndex:  outputIndex,
+		SerialNumber: serialNumber,
+		CreatedAt:    time.Now(),
+	}
+	return nil
+}
+
+func (m *MockDIDStorage) DeleteRecord(txid string, outputIndex int) error {
+	if m.deleteError != nil {
+		return m.deleteError
+	}
+	key := m.makeKey(txid, outputIndex)
+	delete(m.records, key)
+	return nil
+}
+
+func (m *MockDIDStorage) FindByCertificateSerialNumber(serialNumber string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.SerialNumber == serialNumber {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+
+	return results, nil
+}
+
+func (m *MockDIDStorage) FindByOutpoint(outpoint string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+
+	// Parse txid and outputIndex from the outpoint string (format: "txid.outputIndex")
+	parts := strings.Split(outpoint, ".")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid outpoint format, expected txid.outputIndex")
+	}
+
+	txid := parts[0]
+	var outputIndex int
+	_, err := fmt.Sscanf(parts[1], "%d", &outputIndex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid output index in outpoint: %w", err)
+	}
+
+	key := m.makeKey(txid, outputIndex)
+	if record, exists := m.records[key]; exists {
+		return []UTXOReference{
+			{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			},
+		}, nil
+	}
+
+	return []UTXOReference{}, nil
 }
 
 // makeQuery creates a json.RawMessage from a map
@@ -71,38 +124,23 @@ func makeHashFromHex(hexStr string) *chainhash.Hash {
 }
 
 func TestDIDLookupService_NewInstance(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 	require.NotNil(t, ls)
 	require.NotNil(t, ls.storage)
 }
 
 func TestDIDLookupService_GetDocumentation(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 	docs := ls.GetDocumentation()
 	assert.Contains(t, docs, "DID Lookup Service")
 	assert.Contains(t, docs, "ls_did")
 }
 
 func TestDIDLookupService_GetMetaData(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 	meta := ls.GetMetaData()
 	require.NotNil(t, meta)
 	assert.Equal(t, "DID Lookup Service", meta.Name)
@@ -110,13 +148,8 @@ func TestDIDLookupService_GetMetaData(t *testing.T) {
 }
 
 func TestDIDLookupService_Lookup_NilQuestion(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 	answer, err := ls.Lookup(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Nil(t, answer)
@@ -124,13 +157,8 @@ func TestDIDLookupService_Lookup_NilQuestion(t *testing.T) {
 }
 
 func TestDIDLookupService_Lookup_WrongService(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
 		Query:   makeQuery(map[string]interface{}{"serialNumber": "test"}),
@@ -142,13 +170,8 @@ func TestDIDLookupService_Lookup_WrongService(t *testing.T) {
 }
 
 func TestDIDLookupService_Lookup_EmptyQuery(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_did",
 		Query:   makeQuery(map[string]interface{}{}),
@@ -160,17 +183,12 @@ func TestDIDLookupService_Lookup_EmptyQuery(t *testing.T) {
 }
 
 func TestDIDLookupService_Lookup_BySerialNumber(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// Store a record first
 	testSerialNumber := "abc123serialnumber"
-	err := ls.storage.StoreRecord("txid123", 0, testSerialNumber)
+	err := storage.StoreRecord("txid123", 0, testSerialNumber)
 	require.NoError(t, err)
 
 	// Lookup by serial number
@@ -181,7 +199,7 @@ func TestDIDLookupService_Lookup_BySerialNumber(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, "output-list", answer.Type)
+	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -191,16 +209,11 @@ func TestDIDLookupService_Lookup_BySerialNumber(t *testing.T) {
 }
 
 func TestDIDLookupService_Lookup_ByOutpoint(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// Store a record first
-	err := ls.storage.StoreRecord("txid456", 2, "serial456")
+	err := storage.StoreRecord("txid456", 2, "serial456")
 	require.NoError(t, err)
 
 	// Lookup by outpoint
@@ -211,7 +224,7 @@ func TestDIDLookupService_Lookup_ByOutpoint(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, "output-list", answer.Type)
+	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -221,13 +234,8 @@ func TestDIDLookupService_Lookup_ByOutpoint(t *testing.T) {
 }
 
 func TestDIDLookupService_Lookup_NoResults(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// Lookup non-existent serial number
 	question := &lookup.LookupQuestion{
@@ -237,7 +245,7 @@ func TestDIDLookupService_Lookup_NoResults(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, "output-list", answer.Type)
+	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -245,13 +253,8 @@ func TestDIDLookupService_Lookup_NoResults(t *testing.T) {
 }
 
 func TestDIDLookupService_OutputAdmittedByTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// Create a valid DID transaction
 	tx, err := createValidDIDTransaction(t)
@@ -271,7 +274,7 @@ func TestDIDLookupService_OutputAdmittedByTopic(t *testing.T) {
 
 	// Verify the record was stored
 	txid := tx.TxID().String()
-	results, err := ls.storage.FindByOutpoint(txid + ".0")
+	results, err := storage.FindByOutpoint(txid + ".0")
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	assert.Equal(t, txid, results[0].Txid)
@@ -279,13 +282,8 @@ func TestDIDLookupService_OutputAdmittedByTopic(t *testing.T) {
 }
 
 func TestDIDLookupService_OutputAdmittedByTopic_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// Create a valid DID transaction
 	tx, err := createValidDIDTransaction(t)
@@ -305,19 +303,14 @@ func TestDIDLookupService_OutputAdmittedByTopic_WrongTopic(t *testing.T) {
 
 	// Verify nothing was stored
 	txid := tx.TxID().String()
-	results, err := ls.storage.FindByOutpoint(txid + ".0")
+	results, err := storage.FindByOutpoint(txid + ".0")
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestDIDLookupService_OutputAdmittedByTopic_InvalidBEEF(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	payload := &engine.OutputAdmittedByTopic{
 		Topic:       "tm_did",
@@ -331,23 +324,16 @@ func TestDIDLookupService_OutputAdmittedByTopic_InvalidBEEF(t *testing.T) {
 }
 
 func TestDIDLookupService_OutputAdmittedByTopic_InvalidPushDrop(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
-	ls := NewDIDLookupService(db)
-
-	// Create a transaction with non-PushDrop output
-	tx := transaction.NewTransaction()
-	tx.AddInput(&transaction.TransactionInput{
-		SourceTXID: &chainhash.Hash{},
-	})
-	tx.AddOutput(&transaction.TransactionOutput{
+	// Create a transaction with non-PushDrop output using the helper
+	output := &transaction.TransactionOutput{
 		Satoshis:      1,
 		LockingScript: &script.Script{},
-	})
+	}
+	tx, err := createDIDTransactionWithInput(t, output)
+	require.NoError(t, err)
 
 	beef, err := tx.BEEF()
 	require.NoError(t, err)
@@ -364,21 +350,16 @@ func TestDIDLookupService_OutputAdmittedByTopic_InvalidPushDrop(t *testing.T) {
 }
 
 func TestDIDLookupService_OutputSpent(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// Store a record first - use a valid hex txid
 	txidHex := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-	err := ls.storage.StoreRecord(txidHex, 1, "serial123")
+	err := storage.StoreRecord(txidHex, 1, "serial123")
 	require.NoError(t, err)
 
 	// Verify it exists
-	results, err := ls.storage.FindByOutpoint(txidHex + ".1")
+	results, err := storage.FindByOutpoint(txidHex + ".1")
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -397,23 +378,18 @@ func TestDIDLookupService_OutputSpent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err = ls.storage.FindByOutpoint(txidHex + ".1")
+	results, err = storage.FindByOutpoint(txidHex + ".1")
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestDIDLookupService_OutputSpent_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// Store a record first - use a valid hex txid
 	txidHex := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-	err := ls.storage.StoreRecord(txidHex, 0, "serial456")
+	err := storage.StoreRecord(txidHex, 0, "serial456")
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
@@ -431,23 +407,18 @@ func TestDIDLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it still exists (was not deleted)
-	results, err := ls.storage.FindByOutpoint(txidHex + ".0")
+	results, err := storage.FindByOutpoint(txidHex + ".0")
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestDIDLookupService_OutputEvicted(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// Store a record first - use a valid hex txid
 	txidHex := "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
-	err := ls.storage.StoreRecord(txidHex, 0, "serial789")
+	err := storage.StoreRecord(txidHex, 0, "serial789")
 	require.NoError(t, err)
 
 	// Evict the output
@@ -462,19 +433,14 @@ func TestDIDLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err := ls.storage.FindByOutpoint(txidHex + ".0")
+	results, err := storage.FindByOutpoint(txidHex + ".0")
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestDIDLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// This is a no-op for DID, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000001"
@@ -490,13 +456,8 @@ func TestDIDLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 }
 
 func TestDIDLookupService_OutputBlockHeightUpdated(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewDIDLookupService(db)
+	storage := NewMockDIDStorage()
+	ls := NewDIDLookupServiceWithStorage(storage)
 
 	// This is a no-op for DID, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"

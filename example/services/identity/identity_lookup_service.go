@@ -83,13 +83,20 @@ Fuzzy attribute search allows partial matches, e.g., searching for "John" will m
 
 // IdentityLookupService implements a lookup service for Identity registry
 type IdentityLookupService struct {
-	storage *IdentityStorage
+	storage IdentityStorageEngine
 }
 
 // NewIdentityLookupService creates a new IdentityLookupService instance
 func NewIdentityLookupService(db *mongo.Database) *IdentityLookupService {
 	return &IdentityLookupService{
 		storage: NewIdentityStorage(db),
+	}
+}
+
+// NewIdentityLookupServiceWithStorage creates a new IdentityLookupService with a custom storage engine
+func NewIdentityLookupServiceWithStorage(storage IdentityStorageEngine) *IdentityLookupService {
+	return &IdentityLookupService{
+		storage: storage,
 	}
 }
 
@@ -236,6 +243,10 @@ func (ls *IdentityLookupService) OutputBlockHeightUpdated(ctx context.Context, t
 
 // Lookup performs a lookup query
 func (ls *IdentityLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	if question == nil {
+		return nil, fmt.Errorf("a valid query must be provided")
+	}
+
 	slog.Debug("Identity lookup", "query", string(question.Query))
 
 	// Parse the query

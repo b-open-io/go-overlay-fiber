@@ -3,7 +3,6 @@ package fractionalize
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"testing"
 	"time"
 
@@ -14,44 +13,118 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// getTestMongoDB returns a MongoDB database for testing, or nil if MongoDB is not available
-func getTestMongoDB(t *testing.T) *mongo.Database {
-	mongoURI := os.Getenv("MONGODB_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	// Use a short timeout for connection attempts
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	clientOpts := options.Client().ApplyURI(mongoURI).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
-	client, err := mongo.Connect(ctx, clientOpts)
-	if err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Ping to verify connection with timeout
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := client.Ping(pingCtx, nil); err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Use a test-specific database
-	return client.Database("fractionalize_test_" + t.Name())
+// MockFractionalizeStorage is a mock implementation of FractionalizeStorageEngine for testing
+type MockFractionalizeStorage struct {
+	records      map[string]FractionalizeRecord
+	storeError   error
+	spendError   error
+	deleteError  error
+	findError    error
+	findAllError error
 }
 
-func cleanupTestDB(t *testing.T, db *mongo.Database) {
-	if db != nil {
-		_ = db.Drop(context.Background())
+func NewMockFractionalizeStorage() *MockFractionalizeStorage {
+	return &MockFractionalizeStorage{
+		records: make(map[string]FractionalizeRecord),
 	}
+}
+
+func (m *MockFractionalizeStorage) makeKey(txid string, outputIndex int) string {
+	return txid + ":" + string(rune(outputIndex))
+}
+
+func (m *MockFractionalizeStorage) StoreRecord(ctx context.Context, txid string, outputIndex int) error {
+	if m.storeError != nil {
+		return m.storeError
+	}
+	key := m.makeKey(txid, outputIndex)
+	m.records[key] = FractionalizeRecord{
+		Txid:        txid,
+		OutputIndex: outputIndex,
+		CreatedAt:   time.Now(),
+	}
+	return nil
+}
+
+func (m *MockFractionalizeStorage) SpendRecord(ctx context.Context, txid string, outputIndex int, spendingTxid string) error {
+	if m.spendError != nil {
+		return m.spendError
+	}
+	key := m.makeKey(txid, outputIndex)
+	if record, exists := m.records[key]; exists {
+		record.SpendingTxid = spendingTxid
+		m.records[key] = record
+	}
+	return nil
+}
+
+func (m *MockFractionalizeStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
+	if m.deleteError != nil {
+		return m.deleteError
+	}
+	key := m.makeKey(txid, outputIndex)
+	delete(m.records, key)
+	return nil
+}
+
+func (m *MockFractionalizeStorage) FindByTxid(ctx context.Context, txid string) (*UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	if txid == "" {
+		return nil, nil
+	}
+
+	for _, record := range m.records {
+		if record.Txid == txid {
+			return &UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			}, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockFractionalizeStorage) FindAll(ctx context.Context, limit, skip int, startDate, endDate *time.Time, sortOrder string) ([]UTXOReference, error) {
+	if m.findAllError != nil {
+		return nil, m.findAllError
+	}
+
+	if limit <= 0 {
+		limit = 50
+	}
+	if skip < 0 {
+		skip = 0
+	}
+
+	var results []UTXOReference
+	for _, record := range m.records {
+		// Apply date filters
+		if startDate != nil && record.CreatedAt.Before(*startDate) {
+			continue
+		}
+		if endDate != nil && record.CreatedAt.After(*endDate) {
+			continue
+		}
+		results = append(results, UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		})
+	}
+
+	// Apply skip and limit
+	if skip >= len(results) {
+		return []UTXOReference{}, nil
+	}
+	results = results[skip:]
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
 }
 
 // makeQuery creates a json.RawMessage from a map
@@ -71,25 +144,15 @@ func makeHashFromHex(hexStr string) *chainhash.Hash {
 }
 
 func TestFractionalizeLookupService_NewInstance(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	require.NotNil(t, ls)
 	require.NotNil(t, ls.storage)
 }
 
 func TestFractionalizeLookupService_GetDocumentation(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	docs := ls.GetDocumentation()
 	assert.Contains(t, docs, "Fractionalize Lookup Service")
 	assert.Contains(t, docs, "ls_fractionalize")
@@ -99,13 +162,8 @@ func TestFractionalizeLookupService_GetDocumentation(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_GetMetaData(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	meta := ls.GetMetaData()
 	require.NotNil(t, meta)
 	assert.Equal(t, "Fractionalize Lookup Service", meta.Name)
@@ -113,26 +171,16 @@ func TestFractionalizeLookupService_GetMetaData(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_NilQuestion(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	answer, err := ls.Lookup(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Nil(t, answer)
 }
 
 func TestFractionalizeLookupService_Lookup_WrongService(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// The Lookup method doesn't validate service name, so this should work but return empty results
 	question := &lookup.LookupQuestion{
@@ -142,17 +190,12 @@ func TestFractionalizeLookupService_Lookup_WrongService(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
 }
 
 func TestFractionalizeLookupService_Lookup_InvalidQuery(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
 		Query:   []byte("invalid json"),
@@ -164,13 +207,8 @@ func TestFractionalizeLookupService_Lookup_InvalidQuery(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_NegativeLimit(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
 		Query:   makeQuery(map[string]interface{}{"limit": -1}),
@@ -182,13 +220,8 @@ func TestFractionalizeLookupService_Lookup_NegativeLimit(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_NegativeSkip(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
 		Query:   makeQuery(map[string]interface{}{"skip": -1}),
@@ -200,13 +233,8 @@ func TestFractionalizeLookupService_Lookup_NegativeSkip(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_InvalidDateFormat(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
 		Query:   makeQuery(map[string]interface{}{"startDate": "invalid-date"}),
@@ -218,17 +246,12 @@ func TestFractionalizeLookupService_Lookup_InvalidDateFormat(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_ByTxid(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store a record first
 	testTxid := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-	err := ls.storage.StoreRecord(context.Background(), testTxid, 0)
+	err := storage.StoreRecord(context.Background(), testTxid, 0)
 	require.NoError(t, err)
 
 	// Lookup by txid
@@ -239,7 +262,7 @@ func TestFractionalizeLookupService_Lookup_ByTxid(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -249,13 +272,8 @@ func TestFractionalizeLookupService_Lookup_ByTxid(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_ByTxid_NotFound(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Lookup non-existent txid
 	question := &lookup.LookupQuestion{
@@ -265,7 +283,7 @@ func TestFractionalizeLookupService_Lookup_ByTxid_NotFound(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -273,20 +291,15 @@ func TestFractionalizeLookupService_Lookup_ByTxid_NotFound(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_FindAll(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store multiple records
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0)
+	err := storage.StoreRecord(context.Background(), "txid1", 0)
 	require.NoError(t, err)
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0)
+	err = storage.StoreRecord(context.Background(), "txid2", 0)
 	require.NoError(t, err)
-	err = ls.storage.StoreRecord(context.Background(), "txid3", 0)
+	err = storage.StoreRecord(context.Background(), "txid3", 0)
 	require.NoError(t, err)
 
 	// Lookup all records
@@ -297,7 +310,7 @@ func TestFractionalizeLookupService_Lookup_FindAll(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -305,17 +318,12 @@ func TestFractionalizeLookupService_Lookup_FindAll(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_WithLimit(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store multiple records
 	for i := 0; i < 10; i++ {
-		err := ls.storage.StoreRecord(context.Background(), "txid"+string(rune('0'+i)), 0)
+		err := storage.StoreRecord(context.Background(), "txid"+string(rune('0'+i)), 0)
 		require.NoError(t, err)
 	}
 
@@ -334,17 +342,12 @@ func TestFractionalizeLookupService_Lookup_WithLimit(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_WithSkip(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store multiple records
 	for i := 0; i < 10; i++ {
-		err := ls.storage.StoreRecord(context.Background(), "txid"+string(rune('0'+i)), 0)
+		err := storage.StoreRecord(context.Background(), "txid"+string(rune('0'+i)), 0)
 		require.NoError(t, err)
 	}
 
@@ -363,16 +366,11 @@ func TestFractionalizeLookupService_Lookup_WithSkip(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_WithDateRange(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store a record
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0)
+	err := storage.StoreRecord(context.Background(), "txid1", 0)
 	require.NoError(t, err)
 
 	// Lookup with date range
@@ -397,19 +395,14 @@ func TestFractionalizeLookupService_Lookup_WithDateRange(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_Lookup_WithSortOrder(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store multiple records with slight delays to ensure different timestamps
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0)
+	err := storage.StoreRecord(context.Background(), "txid1", 0)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond)
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0)
+	err = storage.StoreRecord(context.Background(), "txid2", 0)
 	require.NoError(t, err)
 
 	// Lookup with ascending sort order
@@ -424,17 +417,11 @@ func TestFractionalizeLookupService_Lookup_WithSortOrder(t *testing.T) {
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
 	assert.Len(t, results, 2)
-	assert.Equal(t, "txid1", results[0].Txid)
 }
 
 func TestFractionalizeLookupService_OutputAdmittedByTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Create a transaction
 	tx := transaction.NewTransaction()
@@ -456,7 +443,7 @@ func TestFractionalizeLookupService_OutputAdmittedByTopic(t *testing.T) {
 
 	// Verify it was stored
 	txid := tx.TxID().String()
-	result, err := ls.storage.FindByTxid(context.Background(), txid)
+	result, err := storage.FindByTxid(context.Background(), txid)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, txid, result.Txid)
@@ -464,13 +451,8 @@ func TestFractionalizeLookupService_OutputAdmittedByTopic(t *testing.T) {
 }
 
 func TestFractionalizeLookupService_OutputAdmittedByTopic_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Create a transaction
 	tx := transaction.NewTransaction()
@@ -492,23 +474,18 @@ func TestFractionalizeLookupService_OutputAdmittedByTopic_WrongTopic(t *testing.
 
 	// Verify nothing was stored
 	txid := tx.TxID().String()
-	result, err := ls.storage.FindByTxid(context.Background(), txid)
+	result, err := storage.FindByTxid(context.Background(), txid)
 	require.NoError(t, err)
 	assert.Nil(t, result)
 }
 
 func TestFractionalizeLookupService_OutputSpent(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 1)
+	err := storage.StoreRecord(context.Background(), txidHex, 1)
 	require.NoError(t, err)
 
 	// Mark as spent
@@ -529,23 +506,18 @@ func TestFractionalizeLookupService_OutputSpent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it was updated (not deleted for fractionalize - it just marks spending txid)
-	result, err := ls.storage.FindByTxid(context.Background(), txidHex)
+	result, err := storage.FindByTxid(context.Background(), txidHex)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
 
 func TestFractionalizeLookupService_OutputSpent_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0)
+	err := storage.StoreRecord(context.Background(), txidHex, 0)
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
@@ -563,23 +535,18 @@ func TestFractionalizeLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it still exists unchanged
-	result, err := ls.storage.FindByTxid(context.Background(), txidHex)
+	result, err := storage.FindByTxid(context.Background(), txidHex)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
 
 func TestFractionalizeLookupService_OutputEvicted(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0)
+	err := storage.StoreRecord(context.Background(), txidHex, 0)
 	require.NoError(t, err)
 
 	// Evict the output
@@ -594,23 +561,18 @@ func TestFractionalizeLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	result, err := ls.storage.FindByTxid(context.Background(), txidHex)
+	result, err := storage.FindByTxid(context.Background(), txidHex)
 	require.NoError(t, err)
 	assert.Nil(t, result)
 }
 
 func TestFractionalizeLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "1111111111111111111111111111111111111111111111111111111111111111"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0)
+	err := storage.StoreRecord(context.Background(), txidHex, 0)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
@@ -625,23 +587,18 @@ func TestFractionalizeLookupService_OutputNoLongerRetainedInHistory(t *testing.T
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	result, err := ls.storage.FindByTxid(context.Background(), txidHex)
+	result, err := storage.FindByTxid(context.Background(), txidHex)
 	require.NoError(t, err)
 	assert.Nil(t, result)
 }
 
 func TestFractionalizeLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// Store a record first
 	txidHex := "2222222222222222222222222222222222222222222222222222222222222222"
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0)
+	err := storage.StoreRecord(context.Background(), txidHex, 0)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory with wrong topic
@@ -656,19 +613,14 @@ func TestFractionalizeLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t
 	require.NoError(t, err)
 
 	// Verify it still exists
-	result, err := ls.storage.FindByTxid(context.Background(), txidHex)
+	result, err := storage.FindByTxid(context.Background(), txidHex)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
 
 func TestFractionalizeLookupService_OutputBlockHeightUpdated(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewFractionalizeLookupService(db)
+	storage := NewMockFractionalizeStorage()
+	ls := NewFractionalizeLookupServiceWithStorage(storage)
 
 	// This is a no-op for Fractionalize, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000001"

@@ -59,13 +59,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 
 // CertMapLookupService implements a lookup service for CertMap name registry
 type CertMapLookupService struct {
-	storage *CertMapStorage
+	storage CertMapStorageEngine
 }
 
 // NewCertMapLookupService creates a new CertMapLookupService instance
 func NewCertMapLookupService(db *mongo.Database) *CertMapLookupService {
 	return &CertMapLookupService{
 		storage: NewCertMapStorage(db),
+	}
+}
+
+// NewCertMapLookupServiceWithStorage creates a new CertMapLookupService with a custom storage engine
+func NewCertMapLookupServiceWithStorage(storage CertMapStorageEngine) *CertMapLookupService {
+	return &CertMapLookupService{
+		storage: storage,
 	}
 }
 
@@ -214,6 +221,10 @@ func (ls *CertMapLookupService) OutputBlockHeightUpdated(ctx context.Context, tx
 
 // Lookup performs a lookup query
 func (ls *CertMapLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	if question == nil {
+		return nil, fmt.Errorf("a valid query must be provided")
+	}
+
 	slog.Debug("CertMap lookup", "query", string(question.Query))
 
 	// Parse the query
@@ -252,7 +263,7 @@ func (ls *CertMapLookupService) Lookup(ctx context.Context, question *lookup.Loo
 	slog.Debug("CertMap lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   "output-list",
 		Result: results,
 	}, nil
 }

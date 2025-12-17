@@ -46,13 +46,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 
 // DIDLookupService implements a lookup service for DID tokens
 type DIDLookupService struct {
-	storage *DIDStorage
+	storage DIDStorageEngine
 }
 
 // NewDIDLookupService creates a new DIDLookupService instance
 func NewDIDLookupService(db *mongo.Database) *DIDLookupService {
 	return &DIDLookupService{
 		storage: NewDIDStorage(db),
+	}
+}
+
+// NewDIDLookupServiceWithStorage creates a new DIDLookupService with a custom storage engine
+func NewDIDLookupServiceWithStorage(storage DIDStorageEngine) *DIDLookupService {
+	return &DIDLookupService{
+		storage: storage,
 	}
 }
 
@@ -135,11 +142,11 @@ func (ls *DIDLookupService) OutputBlockHeightUpdated(ctx context.Context, txid *
 
 // Lookup answers a lookup query
 func (ls *DIDLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
-	slog.Debug("DID lookup query received", "service", question.Service, "query", question.Query)
-
 	if question == nil {
 		return nil, fmt.Errorf("a valid query must be provided")
 	}
+
+	slog.Debug("DID lookup query received", "service", question.Service, "query", question.Query)
 
 	if question.Service != "ls_did" {
 		return nil, fmt.Errorf("unsupported lookup service: %s", question.Service)

@@ -3,7 +3,8 @@ package apps
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,44 +14,193 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// getTestMongoDB returns a MongoDB database for testing, or nil if MongoDB is not available
-func getTestMongoDB(t *testing.T) *mongo.Database {
-	mongoURI := os.Getenv("MONGODB_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	// Use a short timeout for connection attempts
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	clientOpts := options.Client().ApplyURI(mongoURI).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
-	client, err := mongo.Connect(ctx, clientOpts)
-	if err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Ping to verify connection with timeout
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := client.Ping(pingCtx, nil); err != nil {
-		t.Skipf("MongoDB not available: %v", err)
-		return nil
-	}
-
-	// Use a test-specific database
-	return client.Database("apps_test_" + t.Name())
+// MockAppsStorage is a mock implementation of AppsStorageEngine for testing
+type MockAppsStorage struct {
+	records     map[string]*AppCatalogRecord
+	storeError  error
+	deleteError error
+	findError   error
 }
 
-func cleanupTestDB(t *testing.T, db *mongo.Database) {
-	if db != nil {
-		_ = db.Drop(context.Background())
+func NewMockAppsStorage() *MockAppsStorage {
+	return &MockAppsStorage{
+		records: make(map[string]*AppCatalogRecord),
 	}
+}
+
+func (m *MockAppsStorage) makeKey(txid string, outputIndex int) string {
+	return fmt.Sprintf("%s:%d", txid, outputIndex)
+}
+
+func (m *MockAppsStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, metadata *PublishedAppMetadata) error {
+	if m.storeError != nil {
+		return m.storeError
+	}
+	key := m.makeKey(txid, outputIndex)
+	m.records[key] = &AppCatalogRecord{
+		Txid:        txid,
+		OutputIndex: outputIndex,
+		Metadata:    metadata,
+		CreatedAt:   time.Now(),
+	}
+	return nil
+}
+
+func (m *MockAppsStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
+	if m.deleteError != nil {
+		return m.deleteError
+	}
+	key := m.makeKey(txid, outputIndex)
+	delete(m.records, key)
+	return nil
+}
+
+func (m *MockAppsStorage) FindByDomain(ctx context.Context, domain string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.Metadata.Domain == domain {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return m.applyPagination(results, limit, skip), nil
+}
+
+func (m *MockAppsStorage) FindByPublisher(ctx context.Context, publisher string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.Metadata.Publisher == publisher {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return m.applyPagination(results, limit, skip), nil
+}
+
+func (m *MockAppsStorage) FindByOutpoint(ctx context.Context, outpoint string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	parts := strings.Split(outpoint, ".")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid outpoint format – expected \"txid.outputIndex\"")
+	}
+
+	txid := parts[0]
+	var outputIndex int
+	if _, err := fmt.Sscanf(parts[1], "%d", &outputIndex); err != nil {
+		return nil, fmt.Errorf("invalid outpoint format – expected \"txid.outputIndex\"")
+	}
+
+	key := m.makeKey(txid, outputIndex)
+	if record, ok := m.records[key]; ok {
+		return []UTXOReference{
+			{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			},
+		}, nil
+	}
+	return []UTXOReference{}, nil
+}
+
+func (m *MockAppsStorage) FindByNameFuzzy(ctx context.Context, partialName string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	var results []UTXOReference
+	lowerPartialName := strings.ToLower(partialName)
+	for _, record := range m.records {
+		if strings.Contains(strings.ToLower(record.Metadata.Name), lowerPartialName) {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return m.applyPagination(results, limit, skip), nil
+}
+
+func (m *MockAppsStorage) FindByTags(ctx context.Context, tags []string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	var results []UTXOReference
+	for _, record := range m.records {
+		for _, tag := range tags {
+			if contains(record.Metadata.Tags, tag) {
+				results = append(results, UTXOReference{
+					Txid:        record.Txid,
+					OutputIndex: record.OutputIndex,
+				})
+				break
+			}
+		}
+	}
+	return m.applyPagination(results, limit, skip), nil
+}
+
+func (m *MockAppsStorage) FindByCategory(ctx context.Context, category string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	var results []UTXOReference
+	for _, record := range m.records {
+		if record.Metadata.Category == category {
+			results = append(results, UTXOReference{
+				Txid:        record.Txid,
+				OutputIndex: record.OutputIndex,
+			})
+		}
+	}
+	return m.applyPagination(results, limit, skip), nil
+}
+
+func (m *MockAppsStorage) FindAllApps(ctx context.Context, limit, skip int, sortOrder string) ([]UTXOReference, error) {
+	if m.findError != nil {
+		return nil, m.findError
+	}
+	var results []UTXOReference
+	for _, record := range m.records {
+		results = append(results, UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		})
+	}
+	return m.applyPagination(results, limit, skip), nil
+}
+
+func (m *MockAppsStorage) applyPagination(results []UTXOReference, limit, skip int) []UTXOReference {
+	if skip >= len(results) {
+		return []UTXOReference{}
+	}
+	results = results[skip:]
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+	return results
+}
+
+// Helper function to check if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
 
 // makeQuery creates a json.RawMessage from a map
@@ -70,38 +220,23 @@ func makeHashFromHex(hexStr string) *chainhash.Hash {
 }
 
 func TestAppsLookupService_NewInstance(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 	require.NotNil(t, ls)
 	require.NotNil(t, ls.storage)
 }
 
 func TestAppsLookupService_GetDocumentation(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 	docs := ls.GetDocumentation()
 	assert.Contains(t, docs, "Apps Lookup Service")
 	assert.Contains(t, docs, "ls_apps")
 }
 
 func TestAppsLookupService_GetMetaData(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 	meta := ls.GetMetaData()
 	require.NotNil(t, meta)
 	assert.Equal(t, "Apps Lookup Service", meta.Name)
@@ -109,26 +244,16 @@ func TestAppsLookupService_GetMetaData(t *testing.T) {
 }
 
 func TestAppsLookupService_Lookup_NilQuestion(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 	answer, err := ls.Lookup(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Nil(t, answer)
 }
 
 func TestAppsLookupService_Lookup_WrongService(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
 		Query:   makeQuery(map[string]interface{}{"domain": "example.com"}),
@@ -140,13 +265,8 @@ func TestAppsLookupService_Lookup_WrongService(t *testing.T) {
 }
 
 func TestAppsLookupService_Lookup_EmptyQuery(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_apps",
 		Query:   makeQuery(map[string]interface{}{}),
@@ -162,13 +282,8 @@ func TestAppsLookupService_Lookup_EmptyQuery(t *testing.T) {
 }
 
 func TestAppsLookupService_Lookup_ByDomain(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
 	// Store a record first
 	metadata := &PublishedAppMetadata{
@@ -181,7 +296,7 @@ func TestAppsLookupService_Lookup_ByDomain(t *testing.T) {
 		Publisher:   "02pubkey",
 		ReleaseDate: "2025-01-01",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid123", 0, metadata)
+	err := storage.StoreRecord(context.Background(), "txid123", 0, metadata)
 	require.NoError(t, err)
 
 	// Lookup by domain
@@ -202,13 +317,8 @@ func TestAppsLookupService_Lookup_ByDomain(t *testing.T) {
 }
 
 func TestAppsLookupService_Lookup_ByPublisher(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
 	// Store multiple records with the same publisher
 	publisherKey := "02abcdef1234567890"
@@ -222,7 +332,7 @@ func TestAppsLookupService_Lookup_ByPublisher(t *testing.T) {
 		Publisher:   publisherKey,
 		ReleaseDate: "2025-01-01",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, metadata1)
+	err := storage.StoreRecord(context.Background(), "txid1", 0, metadata1)
 	require.NoError(t, err)
 
 	metadata2 := &PublishedAppMetadata{
@@ -235,7 +345,7 @@ func TestAppsLookupService_Lookup_ByPublisher(t *testing.T) {
 		Publisher:   publisherKey,
 		ReleaseDate: "2025-01-02",
 	}
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0, metadata2)
+	err = storage.StoreRecord(context.Background(), "txid2", 0, metadata2)
 	require.NoError(t, err)
 
 	metadata3 := &PublishedAppMetadata{
@@ -248,7 +358,7 @@ func TestAppsLookupService_Lookup_ByPublisher(t *testing.T) {
 		Publisher:   "different_key",
 		ReleaseDate: "2025-01-03",
 	}
-	err = ls.storage.StoreRecord(context.Background(), "txid3", 0, metadata3)
+	err = storage.StoreRecord(context.Background(), "txid3", 0, metadata3)
 	require.NoError(t, err)
 
 	// Lookup by publisher
@@ -266,13 +376,8 @@ func TestAppsLookupService_Lookup_ByPublisher(t *testing.T) {
 }
 
 func TestAppsLookupService_Lookup_ByName(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
 	// Store a record
 	metadata := &PublishedAppMetadata{
@@ -285,7 +390,7 @@ func TestAppsLookupService_Lookup_ByName(t *testing.T) {
 		Publisher:   "02pubkey",
 		ReleaseDate: "2025-01-01",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid456", 0, metadata)
+	err := storage.StoreRecord(context.Background(), "txid456", 0, metadata)
 	require.NoError(t, err)
 
 	// Lookup by name (fuzzy)
@@ -304,13 +409,8 @@ func TestAppsLookupService_Lookup_ByName(t *testing.T) {
 }
 
 func TestAppsLookupService_Lookup_ByOutpoint(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
 	// Store a record
 	metadata := &PublishedAppMetadata{
@@ -323,7 +423,7 @@ func TestAppsLookupService_Lookup_ByOutpoint(t *testing.T) {
 		Publisher:   "02pubkey",
 		ReleaseDate: "2025-01-01",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid789", 2, metadata)
+	err := storage.StoreRecord(context.Background(), "txid789", 2, metadata)
 	require.NoError(t, err)
 
 	// Lookup by outpoint
@@ -343,13 +443,8 @@ func TestAppsLookupService_Lookup_ByOutpoint(t *testing.T) {
 }
 
 func TestAppsLookupService_Lookup_ByTags(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
 	// Store records with different tags
 	metadata1 := &PublishedAppMetadata{
@@ -363,7 +458,7 @@ func TestAppsLookupService_Lookup_ByTags(t *testing.T) {
 		ReleaseDate: "2025-01-01",
 		Tags:        []string{"productivity", "work"},
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, metadata1)
+	err := storage.StoreRecord(context.Background(), "txid1", 0, metadata1)
 	require.NoError(t, err)
 
 	metadata2 := &PublishedAppMetadata{
@@ -377,7 +472,7 @@ func TestAppsLookupService_Lookup_ByTags(t *testing.T) {
 		ReleaseDate: "2025-01-02",
 		Tags:        []string{"finance", "money"},
 	}
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0, metadata2)
+	err = storage.StoreRecord(context.Background(), "txid2", 0, metadata2)
 	require.NoError(t, err)
 
 	// Lookup by tags
@@ -396,13 +491,8 @@ func TestAppsLookupService_Lookup_ByTags(t *testing.T) {
 }
 
 func TestAppsLookupService_Lookup_ByCategory(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
 	// Store records with different categories
 	metadata1 := &PublishedAppMetadata{
@@ -416,7 +506,7 @@ func TestAppsLookupService_Lookup_ByCategory(t *testing.T) {
 		ReleaseDate: "2025-01-01",
 		Category:    "Games",
 	}
-	err := ls.storage.StoreRecord(context.Background(), "txid1", 0, metadata1)
+	err := storage.StoreRecord(context.Background(), "txid1", 0, metadata1)
 	require.NoError(t, err)
 
 	metadata2 := &PublishedAppMetadata{
@@ -430,7 +520,7 @@ func TestAppsLookupService_Lookup_ByCategory(t *testing.T) {
 		ReleaseDate: "2025-01-02",
 		Category:    "Utilities",
 	}
-	err = ls.storage.StoreRecord(context.Background(), "txid2", 0, metadata2)
+	err = storage.StoreRecord(context.Background(), "txid2", 0, metadata2)
 	require.NoError(t, err)
 
 	// Lookup by category
@@ -449,13 +539,8 @@ func TestAppsLookupService_Lookup_ByCategory(t *testing.T) {
 }
 
 func TestAppsLookupService_Lookup_NoResults(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
 	// Lookup non-existent domain
 	question := &lookup.LookupQuestion{
@@ -473,15 +558,10 @@ func TestAppsLookupService_Lookup_NoResults(t *testing.T) {
 }
 
 func TestAppsLookupService_OutputSpent(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
-	ls := NewAppsLookupService(db)
-
-	// Store a record first - use a valid hex txid
+	// Store a record first
 	txidHex := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 	metadata := &PublishedAppMetadata{
 		Version:     "1.0.0",
@@ -493,11 +573,11 @@ func TestAppsLookupService_OutputSpent(t *testing.T) {
 		Publisher:   "02pubkey",
 		ReleaseDate: "2025-01-01",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 1, metadata)
+	err := storage.StoreRecord(context.Background(), txidHex, 1, metadata)
 	require.NoError(t, err)
 
 	// Verify it exists
-	results, err := ls.storage.FindByOutpoint(context.Background(), txidHex+".1")
+	results, err := storage.FindByOutpoint(context.Background(), txidHex+".1")
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -516,21 +596,16 @@ func TestAppsLookupService_OutputSpent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err = ls.storage.FindByOutpoint(context.Background(), txidHex+".1")
+	results, err = storage.FindByOutpoint(context.Background(), txidHex+".1")
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestAppsLookupService_OutputSpent_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
-	ls := NewAppsLookupService(db)
-
-	// Store a record first - use a valid hex txid
+	// Store a record first
 	txidHex := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	metadata := &PublishedAppMetadata{
 		Version:     "1.0.0",
@@ -542,7 +617,7 @@ func TestAppsLookupService_OutputSpent_WrongTopic(t *testing.T) {
 		Publisher:   "02pubkey",
 		ReleaseDate: "2025-01-01",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, metadata)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, metadata)
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
@@ -560,21 +635,16 @@ func TestAppsLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it still exists (was not deleted)
-	results, err := ls.storage.FindByOutpoint(context.Background(), txidHex+".0")
+	results, err := storage.FindByOutpoint(context.Background(), txidHex+".0")
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestAppsLookupService_OutputEvicted(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
-	ls := NewAppsLookupService(db)
-
-	// Store a record first - use a valid hex txid
+	// Store a record first
 	txidHex := "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
 	metadata := &PublishedAppMetadata{
 		Version:     "1.0.0",
@@ -586,7 +656,7 @@ func TestAppsLookupService_OutputEvicted(t *testing.T) {
 		Publisher:   "02pubkey",
 		ReleaseDate: "2025-01-01",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, metadata)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, metadata)
 	require.NoError(t, err)
 
 	// Evict the output
@@ -601,21 +671,16 @@ func TestAppsLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err := ls.storage.FindByOutpoint(context.Background(), txidHex+".0")
+	results, err := storage.FindByOutpoint(context.Background(), txidHex+".0")
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestAppsLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
-	ls := NewAppsLookupService(db)
-
-	// Store a record first - use a valid hex txid
+	// Store a record first
 	txidHex := "1111111111111111111111111111111111111111111111111111111111111111"
 	metadata := &PublishedAppMetadata{
 		Version:     "1.0.0",
@@ -627,7 +692,7 @@ func TestAppsLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 		Publisher:   "02pubkey",
 		ReleaseDate: "2025-01-01",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, metadata)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, metadata)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
@@ -642,21 +707,16 @@ func TestAppsLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's deleted
-	results, err := ls.storage.FindByOutpoint(context.Background(), txidHex+".0")
+	results, err := storage.FindByOutpoint(context.Background(), txidHex+".0")
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
 
 func TestAppsLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
-	ls := NewAppsLookupService(db)
-
-	// Store a record first - use a valid hex txid
+	// Store a record first
 	txidHex := "2222222222222222222222222222222222222222222222222222222222222222"
 	metadata := &PublishedAppMetadata{
 		Version:     "1.0.0",
@@ -668,7 +728,7 @@ func TestAppsLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing
 		Publisher:   "02pubkey",
 		ReleaseDate: "2025-01-01",
 	}
-	err := ls.storage.StoreRecord(context.Background(), txidHex, 0, metadata)
+	err := storage.StoreRecord(context.Background(), txidHex, 0, metadata)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory with wrong topic
@@ -683,19 +743,14 @@ func TestAppsLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing
 	require.NoError(t, err)
 
 	// Verify it still exists (was not deleted)
-	results, err := ls.storage.FindByOutpoint(context.Background(), txidHex+".0")
+	results, err := storage.FindByOutpoint(context.Background(), txidHex+".0")
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
 
 func TestAppsLookupService_OutputBlockHeightUpdated(t *testing.T) {
-	db := getTestMongoDB(t)
-	if db == nil {
-		return
-	}
-	defer cleanupTestDB(t, db)
-
-	ls := NewAppsLookupService(db)
+	storage := NewMockAppsStorage()
+	ls := NewAppsLookupServiceWithStorage(storage)
 
 	// This is a no-op for Apps, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"
