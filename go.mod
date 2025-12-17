@@ -196,6 +196,6 @@ replace github.com/bsv-blockchain/go-overlay-discovery-services => github.com/b-
 
 replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251207133515-104accd1e588
 
-replace github.com/bsv-blockchain/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.1-0.20251216212339-019d3b0cb289
+replace github.com/bsv-blockchain/go-overlay-services => github.com/b-open-io/go-overlay-services v0.0.1-0.20251217202905-3b29cfef8a79
 
-replace github.com/bsv-blockchain/go-sdk => github.com/b-open-io/go-sdk v1.1.25-0.20251208191111-edef5450c3a9
+replace github.com/bsv-blockchain/go-sdk => github.com/b-open-io/go-sdk v1.1.25-0.20251217202954-395a6f25521f
