@@ -2,8 +2,6 @@ package did
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,59 +14,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockDIDStorage is a mock implementation of DIDStorageEngine for testing
+// MockDIDStorage is a mock implementation of DIDStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds DID-specific lookup logic.
 type MockDIDStorage struct {
-	records     map[string]DIDRecord
-	storeError  error
-	deleteError error
-	findError   error
+	*testutil.MockStorageBase[DIDRecord]
 }
 
 func NewMockDIDStorage() *MockDIDStorage {
 	return &MockDIDStorage{
-		records: make(map[string]DIDRecord),
+		MockStorageBase: testutil.NewMockStorageBase[DIDRecord](),
 	}
-}
-
-func (m *MockDIDStorage) makeKey(txid string, outputIndex int) string {
-	return fmt.Sprintf("%s:%d", txid, outputIndex)
 }
 
 func (m *MockDIDStorage) StoreRecord(txid string, outputIndex int, serialNumber string) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = DIDRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, DIDRecord{
 		Txid:         txid,
 		OutputIndex:  outputIndex,
 		SerialNumber: serialNumber,
 		CreatedAt:    time.Now(),
-	}
-	return nil
+	})
 }
 
 func (m *MockDIDStorage) DeleteRecord(txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockDIDStorage) FindByCertificateSerialNumber(serialNumber string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.SerialNumber == serialNumber {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+	matches := m.Filter(func(record DIDRecord) bool {
+		return record.SerialNumber == serialNumber
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 
@@ -76,31 +62,18 @@ func (m *MockDIDStorage) FindByCertificateSerialNumber(serialNumber string) ([]U
 }
 
 func (m *MockDIDStorage) FindByOutpoint(outpoint string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	// Parse txid and outputIndex from the outpoint string (format: "txid.outputIndex")
-	parts := strings.Split(outpoint, ".")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid outpoint format, expected txid.outputIndex")
-	}
-
-	txid := parts[0]
-	var outputIndex int
-	_, err := fmt.Sscanf(parts[1], "%d", &outputIndex)
+	txid, outputIndex, err := testutil.ParseOutpoint(outpoint)
 	if err != nil {
-		return nil, fmt.Errorf("invalid output index in outpoint: %w", err)
+		return nil, err
 	}
 
-	key := m.makeKey(txid, outputIndex)
-	if record, exists := m.records[key]; exists {
-		return []UTXOReference{
-			{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			},
-		}, nil
+	key := testutil.MakeKey(txid, outputIndex)
+	if record, ok := m.Get(key); ok {
+		return []UTXOReference{{Txid: record.Txid, OutputIndex: record.OutputIndex}}, nil
 	}
 
 	return []UTXOReference{}, nil

@@ -2,7 +2,6 @@ package apps
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -15,96 +14,65 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockAppsStorage is a mock implementation of AppsStorageEngine for testing
+// MockAppsStorage is a mock implementation of AppsStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds Apps-specific lookup logic.
 type MockAppsStorage struct {
-	records     map[string]*AppCatalogRecord
-	storeError  error
-	deleteError error
-	findError   error
+	*testutil.MockStorageBase[AppCatalogRecord]
+	findError error
 }
 
 func NewMockAppsStorage() *MockAppsStorage {
 	return &MockAppsStorage{
-		records: make(map[string]*AppCatalogRecord),
+		MockStorageBase: testutil.NewMockStorageBase[AppCatalogRecord](),
 	}
-}
-
-func (m *MockAppsStorage) makeKey(txid string, outputIndex int) string {
-	return fmt.Sprintf("%s:%d", txid, outputIndex)
 }
 
 func (m *MockAppsStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, metadata *PublishedAppMetadata) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = &AppCatalogRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, AppCatalogRecord{
 		Txid:        txid,
 		OutputIndex: outputIndex,
 		Metadata:    metadata,
 		CreatedAt:   time.Now(),
-	}
-	return nil
+	})
 }
 
 func (m *MockAppsStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockAppsStorage) FindByDomain(ctx context.Context, domain string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
 	if m.findError != nil {
 		return nil, m.findError
 	}
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Metadata.Domain == domain {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
-	}
-	return m.applyPagination(results, limit, skip), nil
+	matches := m.Filter(func(record AppCatalogRecord) bool {
+		return record.Metadata.Domain == domain
+	})
+	return m.toUTXOReferences(matches, limit, skip), nil
 }
 
 func (m *MockAppsStorage) FindByPublisher(ctx context.Context, publisher string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
 	if m.findError != nil {
 		return nil, m.findError
 	}
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Metadata.Publisher == publisher {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
-	}
-	return m.applyPagination(results, limit, skip), nil
+	matches := m.Filter(func(record AppCatalogRecord) bool {
+		return record.Metadata.Publisher == publisher
+	})
+	return m.toUTXOReferences(matches, limit, skip), nil
 }
 
 func (m *MockAppsStorage) FindByOutpoint(ctx context.Context, outpoint string) ([]UTXOReference, error) {
 	if m.findError != nil {
 		return nil, m.findError
 	}
-	parts := strings.Split(outpoint, ".")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid outpoint format – expected \"txid.outputIndex\"")
+	txid, outputIndex, err := testutil.ParseOutpoint(outpoint)
+	if err != nil {
+		return nil, err
 	}
 
-	txid := parts[0]
-	var outputIndex int
-	if _, err := fmt.Sscanf(parts[1], "%d", &outputIndex); err != nil {
-		return nil, fmt.Errorf("invalid outpoint format – expected \"txid.outputIndex\"")
-	}
-
-	key := m.makeKey(txid, outputIndex)
-	if record, ok := m.records[key]; ok {
+	key := testutil.MakeKey(txid, outputIndex)
+	if record, ok := m.Get(key); ok {
 		return []UTXOReference{
 			{
 				Txid:        record.Txid,
@@ -119,75 +87,61 @@ func (m *MockAppsStorage) FindByNameFuzzy(ctx context.Context, partialName strin
 	if m.findError != nil {
 		return nil, m.findError
 	}
-	var results []UTXOReference
 	lowerPartialName := strings.ToLower(partialName)
-	for _, record := range m.records {
-		if strings.Contains(strings.ToLower(record.Metadata.Name), lowerPartialName) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
-	}
-	return m.applyPagination(results, limit, skip), nil
+	matches := m.Filter(func(record AppCatalogRecord) bool {
+		return strings.Contains(strings.ToLower(record.Metadata.Name), lowerPartialName)
+	})
+	return m.toUTXOReferences(matches, limit, skip), nil
 }
 
 func (m *MockAppsStorage) FindByTags(ctx context.Context, tags []string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
 	if m.findError != nil {
 		return nil, m.findError
 	}
-	var results []UTXOReference
-	for _, record := range m.records {
+	matches := m.Filter(func(record AppCatalogRecord) bool {
 		for _, tag := range tags {
 			if testutil.Contains(record.Metadata.Tags, tag) {
-				results = append(results, UTXOReference{
-					Txid:        record.Txid,
-					OutputIndex: record.OutputIndex,
-				})
-				break
+				return true
 			}
 		}
-	}
-	return m.applyPagination(results, limit, skip), nil
+		return false
+	})
+	return m.toUTXOReferences(matches, limit, skip), nil
 }
 
 func (m *MockAppsStorage) FindByCategory(ctx context.Context, category string, limit, skip int, sortOrder string) ([]UTXOReference, error) {
 	if m.findError != nil {
 		return nil, m.findError
 	}
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Metadata.Category == category {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
-	}
-	return m.applyPagination(results, limit, skip), nil
+	matches := m.Filter(func(record AppCatalogRecord) bool {
+		return record.Metadata.Category == category
+	})
+	return m.toUTXOReferences(matches, limit, skip), nil
 }
 
 func (m *MockAppsStorage) FindAllApps(ctx context.Context, limit, skip int, sortOrder string) ([]UTXOReference, error) {
 	if m.findError != nil {
 		return nil, m.findError
 	}
-	var results []UTXOReference
-	for _, record := range m.records {
-		results = append(results, UTXOReference{
-			Txid:        record.Txid,
-			OutputIndex: record.OutputIndex,
-		})
-	}
-	return m.applyPagination(results, limit, skip), nil
+	matches := m.GetAll()
+	return m.toUTXOReferences(matches, limit, skip), nil
 }
 
-func (m *MockAppsStorage) applyPagination(results []UTXOReference, limit, skip int) []UTXOReference {
-	if skip >= len(results) {
+func (m *MockAppsStorage) toUTXOReferences(records []AppCatalogRecord, limit, skip int) []UTXOReference {
+	if skip >= len(records) {
 		return []UTXOReference{}
 	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	records = records[skip:]
+	if limit > 0 && len(records) > limit {
+		records = records[:limit]
+	}
+
+	results := make([]UTXOReference, len(records))
+	for i, record := range records {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		}
 	}
 	return results
 }

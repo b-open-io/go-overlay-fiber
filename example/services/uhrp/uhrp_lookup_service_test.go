@@ -15,30 +15,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockUHRPStorage is a mock implementation of UHRPStorageEngine for testing
+// MockUHRPStorage is a mock implementation of UHRPStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds UHRP-specific lookup logic.
 type MockUHRPStorage struct {
-	records     map[string]UHRPRecord
-	storeError  error
-	deleteError error
-	lookupError error
+	*testutil.MockStorageBase[UHRPRecord]
 }
 
 func NewMockUHRPStorage() *MockUHRPStorage {
 	return &MockUHRPStorage{
-		records: make(map[string]UHRPRecord),
+		MockStorageBase: testutil.NewMockStorageBase[UHRPRecord](),
 	}
-}
-
-func (m *MockUHRPStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + strconv.Itoa(outputIndex)
 }
 
 func (m *MockUHRPStorage) StoreRecord(uhrpUrl string, txid string, outputIndex int, hostIdentityKey string, hostedFileLocation string, expiryTime uint64, fileSize uint64) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = UHRPRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, UHRPRecord{
 		Txid:               txid,
 		OutputIndex:        outputIndex,
 		UHRPUrl:            uhrpUrl,
@@ -46,22 +37,17 @@ func (m *MockUHRPStorage) StoreRecord(uhrpUrl string, txid string, outputIndex i
 		HostedFileLocation: hostedFileLocation,
 		ExpiryTime:         expiryTime,
 		FileSize:           fileSize,
-	}
-	return nil
+	})
 }
 
 func (m *MockUHRPStorage) DeleteRecord(txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockUHRPStorage) Lookup(query *UHRPQuery) ([]UTXOReference, error) {
-	if m.lookupError != nil {
-		return nil, m.lookupError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
 	// Handle outpoint query (exact match by txid.outputIndex)
@@ -76,34 +62,11 @@ func (m *MockUHRPStorage) Lookup(query *UHRPQuery) ([]UTXOReference, error) {
 			return nil, fmt.Errorf("invalid output index in outpoint: %w", err)
 		}
 
-		key := m.makeKey(txid, outputIndex)
-		if record, ok := m.records[key]; ok {
+		key := testutil.MakeKey(txid, outputIndex)
+		if record, ok := m.Get(key); ok {
 			return []UTXOReference{{Txid: record.Txid, OutputIndex: record.OutputIndex}}, nil
 		}
 		return []UTXOReference{}, nil
-	}
-
-	// Build results based on query parameters
-	var results []UTXOReference
-	for _, record := range m.records {
-		matches := true
-
-		if query.UHRPUrl != "" && record.UHRPUrl != query.UHRPUrl {
-			matches = false
-		}
-		if query.ExpiryTime != 0 && record.ExpiryTime != query.ExpiryTime {
-			matches = false
-		}
-		if query.HostIdentityKey != "" && record.HostIdentityKey != query.HostIdentityKey {
-			matches = false
-		}
-		if query.FileSize != 0 && record.FileSize != query.FileSize {
-			matches = false
-		}
-
-		if matches {
-			results = append(results, UTXOReference{Txid: record.Txid, OutputIndex: record.OutputIndex})
-		}
 	}
 
 	// Must have at least one filter criterion
@@ -111,6 +74,28 @@ func (m *MockUHRPStorage) Lookup(query *UHRPQuery) ([]UTXOReference, error) {
 		return nil, fmt.Errorf("lookup must specify either outpoint, or at least one of (uhrpUrl, expiryTime, hostIdentityKey, fileSize)")
 	}
 
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record UHRPRecord) bool {
+		if query.UHRPUrl != "" && record.UHRPUrl != query.UHRPUrl {
+			return false
+		}
+		if query.ExpiryTime != 0 && record.ExpiryTime != query.ExpiryTime {
+			return false
+		}
+		if query.HostIdentityKey != "" && record.HostIdentityKey != query.HostIdentityKey {
+			return false
+		}
+		if query.FileSize != 0 && record.FileSize != query.FileSize {
+			return false
+		}
+		return true
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{Txid: record.Txid, OutputIndex: record.OutputIndex}
+	}
 	return results, nil
 }
 

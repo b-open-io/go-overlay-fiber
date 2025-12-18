@@ -13,161 +13,167 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockWalletConfigStorage is a mock implementation of WalletConfigStorageEngine for testing
+// MockWalletConfigStorage is a mock implementation of WalletConfigStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds WalletConfig-specific lookup logic.
 type MockWalletConfigStorage struct {
-	records     map[string]*WalletConfigRecord
-	storeError  error
-	deleteError error
-	findError   error
+	*testutil.MockStorageBase[WalletConfigRecord]
 }
 
 func NewMockWalletConfigStorage() *MockWalletConfigStorage {
 	return &MockWalletConfigStorage{
-		records: make(map[string]*WalletConfigRecord),
+		MockStorageBase: testutil.NewMockStorageBase[WalletConfigRecord](),
 	}
-}
-
-func (m *MockWalletConfigStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockWalletConfigStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, registration *WalletConfigRegistration) error {
-	if m.storeError != nil {
-		return m.storeError
+	if m.StoreError != nil {
+		return m.StoreError
 	}
 
 	// Check for duplicates (excluding txid/outputIndex)
-	for _, record := range m.records {
-		if record.Registration.ConfigID == registration.ConfigID &&
+	matches := m.Filter(func(record WalletConfigRecord) bool {
+		return record.Registration.ConfigID == registration.ConfigID &&
 			record.Registration.Name == registration.Name &&
 			record.Registration.Icon == registration.Icon &&
 			record.Registration.WAB == registration.WAB &&
 			record.Registration.Storage == registration.Storage &&
 			record.Registration.Messagebox == registration.Messagebox &&
 			record.Registration.Legal == registration.Legal &&
-			record.Registration.RegistryOperator == registration.RegistryOperator {
-			// Duplicate found, don't insert
-			return nil
-		}
+			record.Registration.RegistryOperator == registration.RegistryOperator
+	})
+
+	if len(matches) > 0 {
+		// Duplicate found, don't insert
+		return nil
 	}
 
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = &WalletConfigRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, WalletConfigRecord{
 		Txid:         txid,
 		OutputIndex:  outputIndex,
 		Registration: registration,
-	}
-	return nil
+	})
 }
 
 func (m *MockWalletConfigStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockWalletConfigStorage) FindByConfigID(ctx context.Context, configID string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Registration.ConfigID == configID && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+	matches := m.Filter(func(record WalletConfigRecord) bool {
+		return record.Registration.ConfigID == configID &&
+			testutil.Contains(registryOperators, record.Registration.RegistryOperator)
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 	return results, nil
 }
 
 func (m *MockWalletConfigStorage) FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		// Simple case-insensitive substring match for testing
-		if strings.Contains(strings.ToLower(record.Registration.Name), strings.ToLower(name)) &&
-			testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+	matches := m.Filter(func(record WalletConfigRecord) bool {
+		return strings.Contains(strings.ToLower(record.Registration.Name), strings.ToLower(name)) &&
+			testutil.Contains(registryOperators, record.Registration.RegistryOperator)
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 	return results, nil
 }
 
 func (m *MockWalletConfigStorage) FindByWAB(ctx context.Context, wab string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Registration.WAB == wab && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+	matches := m.Filter(func(record WalletConfigRecord) bool {
+		return record.Registration.WAB == wab &&
+			testutil.Contains(registryOperators, record.Registration.RegistryOperator)
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 	return results, nil
 }
 
 func (m *MockWalletConfigStorage) FindByStorage(ctx context.Context, storage string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Registration.Storage == storage && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+	matches := m.Filter(func(record WalletConfigRecord) bool {
+		return record.Registration.Storage == storage &&
+			testutil.Contains(registryOperators, record.Registration.RegistryOperator)
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 	return results, nil
 }
 
 func (m *MockWalletConfigStorage) FindByMessagebox(ctx context.Context, messagebox string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Registration.Messagebox == messagebox && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+	matches := m.Filter(func(record WalletConfigRecord) bool {
+		return record.Registration.Messagebox == messagebox &&
+			testutil.Contains(registryOperators, record.Registration.RegistryOperator)
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 	return results, nil
 }
 
 func (m *MockWalletConfigStorage) ListAll(ctx context.Context, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+	matches := m.Filter(func(record WalletConfigRecord) bool {
+		return testutil.Contains(registryOperators, record.Registration.RegistryOperator)
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 	return results, nil

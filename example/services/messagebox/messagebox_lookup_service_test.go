@@ -14,98 +14,91 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockMessageBoxStorage is a mock implementation of MessageBoxStorageEngine for testing
+// MockMessageBoxStorage is a mock implementation of MessageBoxStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds MessageBox-specific lookup logic.
 type MockMessageBoxStorage struct {
-	records      map[string]MessageBoxAdvertisement
-	storeError   error
-	deleteError  error
-	findError    error
-	findAllError error
+	*testutil.MockStorageBase[MessageBoxAdvertisement]
 }
 
 func NewMockMessageBoxStorage() *MockMessageBoxStorage {
 	return &MockMessageBoxStorage{
-		records: make(map[string]MessageBoxAdvertisement),
+		MockStorageBase: testutil.NewMockStorageBase[MessageBoxAdvertisement](),
 	}
-}
-
-func (m *MockMessageBoxStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockMessageBoxStorage) StoreRecord(identityKey string, host string, txid string, outputIndex int) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = MessageBoxAdvertisement{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, MessageBoxAdvertisement{
 		IdentityKey: identityKey,
 		Host:        host,
 		Txid:        txid,
 		OutputIndex: outputIndex,
-	}
-	return nil
+	})
 }
 
 func (m *MockMessageBoxStorage) DeleteRecord(txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockMessageBoxStorage) FindAdvertisements(identityKey string, host string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.IdentityKey == identityKey {
-			if host == "" || record.Host == host {
-				results = append(results, UTXOReference{
-					Txid:        record.Txid,
-					OutputIndex: record.OutputIndex,
-				})
-			}
+	matches := m.Filter(func(record MessageBoxAdvertisement) bool {
+		if record.IdentityKey != identityKey {
+			return false
+		}
+		if host != "" && record.Host != host {
+			return false
+		}
+		return true
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 	return results, nil
 }
 
 func (m *MockMessageBoxStorage) FindAll() ([]UTXOReference, error) {
-	if m.findAllError != nil {
-		return nil, m.findAllError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		results = append(results, UTXOReference{
+	allRecords := m.GetAll()
+	results := make([]UTXOReference, len(allRecords))
+	for i, record := range allRecords {
+		results[i] = UTXOReference{
 			Txid:        record.Txid,
 			OutputIndex: record.OutputIndex,
-		})
+		}
 	}
 	return results, nil
 }
 
 func (m *MockMessageBoxStorage) FindRecent(limit int) ([]UTXOReference, error) {
-	if m.findAllError != nil {
-		return nil, m.findAllError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	count := 0
-	for _, record := range m.records {
-		if limit > 0 && count >= limit {
-			break
+	allRecords := m.GetAll()
+	count := len(allRecords)
+	if limit > 0 && limit < count {
+		count = limit
+	}
+
+	results := make([]UTXOReference, count)
+	for i := 0; i < count; i++ {
+		results[i] = UTXOReference{
+			Txid:        allRecords[i].Txid,
+			OutputIndex: allRecords[i].OutputIndex,
 		}
-		results = append(results, UTXOReference{
-			Txid:        record.Txid,
-			OutputIndex: record.OutputIndex,
-		})
-		count++
 	}
 	return results, nil
 }

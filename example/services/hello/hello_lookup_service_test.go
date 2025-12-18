@@ -13,108 +13,105 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockHelloWorldStorage is a mock implementation of HelloWorldStorageEngine for testing
+// MockHelloWorldStorage is a mock implementation of HelloWorldStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds HelloWorld-specific lookup logic.
 type MockHelloWorldStorage struct {
-	records      map[string]HelloWorldRecord
-	storeError   error
-	deleteError  error
-	findError    error
-	findAllError error
+	*testutil.MockStorageBase[HelloWorldRecord]
 }
 
 func NewMockHelloWorldStorage() *MockHelloWorldStorage {
 	return &MockHelloWorldStorage{
-		records: make(map[string]HelloWorldRecord),
+		MockStorageBase: testutil.NewMockStorageBase[HelloWorldRecord](),
 	}
-}
-
-func (m *MockHelloWorldStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockHelloWorldStorage) StoreRecord(txid string, outputIndex int, message string) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = HelloWorldRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, HelloWorldRecord{
 		Txid:        txid,
 		OutputIndex: outputIndex,
 		Message:     message,
 		CreatedAt:   time.Now(),
-	}
-	return nil
+	})
 }
 
 func (m *MockHelloWorldStorage) DeleteRecord(txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockHelloWorldStorage) FindByMessage(message string, limit int, skip int, sortOrder string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if message == "" {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record HelloWorldRecord) bool {
 		// Simple substring match for testing (real implementation uses full-text search)
-		if contains(record.Message, message) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
-	}
+		return contains(record.Message, message)
+	})
 
-	// Apply skip and limit
-	if skip >= len(results) {
+	// Apply skip
+	if skip >= len(matches) {
 		return []UTXOReference{}, nil
 	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	matches = matches[skip:]
+
+	// Apply limit
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
 	}
 
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		}
+	}
 	return results, nil
 }
 
 func (m *MockHelloWorldStorage) FindAll(limit int, skip int, startDate *time.Time, endDate *time.Time, sortOrder string) ([]UTXOReference, error) {
-	if m.findAllError != nil {
-		return nil, m.findAllError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record HelloWorldRecord) bool {
 		// Apply date filters
 		if startDate != nil && record.CreatedAt.Before(*startDate) {
-			continue
+			return false
 		}
 		if endDate != nil && record.CreatedAt.After(*endDate) {
-			continue
+			return false
 		}
-		results = append(results, UTXOReference{
-			Txid:        record.Txid,
-			OutputIndex: record.OutputIndex,
-		})
-	}
+		return true
+	})
 
-	// Apply skip and limit
-	if skip >= len(results) {
+	// Apply skip
+	if skip >= len(matches) {
 		return []UTXOReference{}, nil
 	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	matches = matches[skip:]
+
+	// Apply limit
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
 	}
 
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		}
+	}
 	return results, nil
 }
 

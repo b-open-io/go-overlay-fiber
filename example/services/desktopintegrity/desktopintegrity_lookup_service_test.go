@@ -13,139 +13,104 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockDesktopIntegrityStorage is a mock implementation of DesktopIntegrityStorageEngine for testing
+// MockDesktopIntegrityStorage is a mock implementation of DesktopIntegrityStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds DesktopIntegrity-specific lookup logic.
 type MockDesktopIntegrityStorage struct {
-	records      map[string]DesktopIntegrityRecord
-	storeError   error
-	deleteError  error
-	findError    error
-	findAllError error
+	*testutil.MockStorageBase[DesktopIntegrityRecord]
 }
 
 func NewMockDesktopIntegrityStorage() *MockDesktopIntegrityStorage {
 	return &MockDesktopIntegrityStorage{
-		records: make(map[string]DesktopIntegrityRecord),
+		MockStorageBase: testutil.NewMockStorageBase[DesktopIntegrityRecord](),
 	}
-}
-
-func (m *MockDesktopIntegrityStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockDesktopIntegrityStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, fileHash string, offChainValues []byte) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = DesktopIntegrityRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, DesktopIntegrityRecord{
 		Txid:           txid,
 		OutputIndex:    outputIndex,
 		FileHash:       fileHash,
 		OffChainValues: offChainValues,
 		CreatedAt:      time.Now(),
-	}
-	return nil
+	})
 }
 
 func (m *MockDesktopIntegrityStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockDesktopIntegrityStorage) FindByFileHash(ctx context.Context, fileHash string, limit int, skip int, sortOrder string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if fileHash == "" {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.FileHash == fileHash {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
-	}
+	matches := m.Filter(func(record DesktopIntegrityRecord) bool {
+		return record.FileHash == fileHash
+	})
 
-	// Apply skip and limit
-	if skip >= len(results) {
-		return []UTXOReference{}, nil
-	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	return results, nil
+	return m.applyPaginationAndConvert(matches, limit, skip), nil
 }
 
 func (m *MockDesktopIntegrityStorage) FindByTxid(ctx context.Context, txid string, limit int, skip int, sortOrder string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if txid == "" {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Txid == txid {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
-	}
+	matches := m.Filter(func(record DesktopIntegrityRecord) bool {
+		return record.Txid == txid
+	})
 
-	// Apply skip and limit
-	if skip >= len(results) {
-		return []UTXOReference{}, nil
-	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	return results, nil
+	return m.applyPaginationAndConvert(matches, limit, skip), nil
 }
 
 func (m *MockDesktopIntegrityStorage) FindAll(ctx context.Context, limit int, skip int, startDate *time.Time, endDate *time.Time, sortOrder string) ([]UTXOReference, error) {
-	if m.findAllError != nil {
-		return nil, m.findAllError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		// Apply date filters
+	matches := m.Filter(func(record DesktopIntegrityRecord) bool {
 		if startDate != nil && record.CreatedAt.Before(*startDate) {
-			continue
+			return false
 		}
 		if endDate != nil && record.CreatedAt.After(*endDate) {
-			continue
+			return false
 		}
-		results = append(results, UTXOReference{
+		return true
+	})
+
+	return m.applyPaginationAndConvert(matches, limit, skip), nil
+}
+
+// Helper to apply pagination and convert to UTXOReference
+func (m *MockDesktopIntegrityStorage) applyPaginationAndConvert(records []DesktopIntegrityRecord, limit int, skip int) []UTXOReference {
+	// Apply skip
+	if skip >= len(records) {
+		return []UTXOReference{}
+	}
+	records = records[skip:]
+
+	// Apply limit
+	if limit > 0 && len(records) > limit {
+		records = records[:limit]
+	}
+
+	// Convert to UTXOReference
+	results := make([]UTXOReference, len(records))
+	for i, record := range records {
+		results[i] = UTXOReference{
 			Txid:        record.Txid,
 			OutputIndex: record.OutputIndex,
-		})
+		}
 	}
-
-	// Apply skip and limit
-	if skip >= len(results) {
-		return []UTXOReference{}, nil
-	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	return results, nil
+	return results
 }
 
 func TestDesktopIntegrityLookupService_NewInstance(t *testing.T) {

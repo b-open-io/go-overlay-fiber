@@ -2,7 +2,6 @@ package any
 
 import (
 	"context"
-	"strconv"
 	"testing"
 	"time"
 
@@ -12,93 +11,82 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockAnyStorage is a mock implementation of AnyStorageEngine for testing
+// MockAnyStorage is a mock implementation of AnyStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds Any-specific lookup logic.
 type MockAnyStorage struct {
-	records      map[string]AnyRecord
-	storeError   error
-	spendError   error
-	deleteError  error
-	findError    error
-	findAllError error
+	*testutil.MockStorageBase[AnyRecord]
 }
 
 func NewMockAnyStorage() *MockAnyStorage {
 	return &MockAnyStorage{
-		records: make(map[string]AnyRecord),
+		MockStorageBase: testutil.NewMockStorageBase[AnyRecord](),
 	}
-}
-
-func (m *MockAnyStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + strconv.Itoa(outputIndex)
 }
 
 func (m *MockAnyStorage) StoreRecord(txid string, outputIndex int) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = AnyRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, AnyRecord{
 		Txid:        txid,
 		OutputIndex: outputIndex,
 		CreatedAt:   time.Now(),
-	}
-	return nil
+	})
 }
 
 func (m *MockAnyStorage) SpendRecord(txid string, outputIndex int, spendingTxid string) error {
-	if m.spendError != nil {
-		return m.spendError
-	}
-	key := m.makeKey(txid, outputIndex)
-	if record, ok := m.records[key]; ok {
+	key := testutil.MakeKey(txid, outputIndex)
+	if record, ok := m.Get(key); ok {
 		record.SpendingTxid = &spendingTxid
-		m.records[key] = record
+		return m.Store(key, record)
 	}
 	return nil
 }
 
 func (m *MockAnyStorage) DeleteRecord(txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockAnyStorage) FindByTxid(txid string) (*UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if txid == "" {
 		return nil, nil
 	}
 
-	for _, record := range m.records {
-		if record.Txid == txid {
-			return &UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			}, nil
-		}
+	// Use Filter from base to find matching record
+	matches := m.Filter(func(record AnyRecord) bool {
+		return record.Txid == txid
+	})
+
+	if len(matches) > 0 {
+		return &UTXOReference{
+			Txid:        matches[0].Txid,
+			OutputIndex: matches[0].OutputIndex,
+		}, nil
 	}
 	return nil, nil
 }
 
 func (m *MockAnyStorage) FindAll(limit int, skip int, startDate *time.Time, endDate *time.Time, sortOrder string) ([]UTXOReference, error) {
-	if m.findAllError != nil {
-		return nil, m.findAllError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		// Apply date filters
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record AnyRecord) bool {
 		if startDate != nil && record.CreatedAt.Before(*startDate) {
-			continue
+			return false
 		}
 		if endDate != nil && record.CreatedAt.After(*endDate) {
-			continue
+			return false
 		}
+		return true
+	})
+
+	// Convert to UTXOReference slice
+	var results []UTXOReference
+	for _, record := range matches {
 		results = append(results, UTXOReference{
 			Txid:        record.Txid,
 			OutputIndex: record.OutputIndex,

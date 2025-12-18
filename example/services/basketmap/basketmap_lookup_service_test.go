@@ -14,78 +14,68 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockBasketMapStorage is a mock implementation of BasketMapStorageEngine for testing
+// MockBasketMapStorage is a mock implementation of BasketMapStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds BasketMap-specific lookup logic.
 type MockBasketMapStorage struct {
-	records     map[string]BasketMapRecord
-	storeError  error
-	deleteError error
-	findError   error
+	*testutil.MockStorageBase[BasketMapRecord]
+	FindError error
 }
 
 func NewMockBasketMapStorage() *MockBasketMapStorage {
 	return &MockBasketMapStorage{
-		records: make(map[string]BasketMapRecord),
+		MockStorageBase: testutil.NewMockStorageBase[BasketMapRecord](),
 	}
-}
-
-func (m *MockBasketMapStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockBasketMapStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, registration BasketMapRegistration) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = BasketMapRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, BasketMapRecord{
 		Txid:         txid,
 		OutputIndex:  outputIndex,
 		Registration: registration,
 		CreatedAt:    time.Now(),
-	}
-	return nil
+	})
 }
 
 func (m *MockBasketMapStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockBasketMapStorage) FindByID(ctx context.Context, basketID string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.FindError != nil {
+		return nil, m.FindError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Registration.BasketID == basketID && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record BasketMapRecord) bool {
+		return record.Registration.BasketID == basketID &&
+			testutil.Contains(registryOperators, record.Registration.RegistryOperator)
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{Txid: record.Txid, OutputIndex: record.OutputIndex}
 	}
 	return results, nil
 }
 
 func (m *MockBasketMapStorage) FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.FindError != nil {
+		return nil, m.FindError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		// Simple fuzzy matching: case-insensitive substring match
-		if fuzzyMatch(record.Registration.Name, name) && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record BasketMapRecord) bool {
+		return fuzzyMatch(record.Registration.Name, name) &&
+			testutil.Contains(registryOperators, record.Registration.RegistryOperator)
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{Txid: record.Txid, OutputIndex: record.OutputIndex}
 	}
 	return results, nil
 }
@@ -437,4 +427,257 @@ func TestBasketMapLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)
 	require.NoError(t, err)
+}
+
+// TestTableDrivenQueryValidation tests various query scenarios using table-driven tests
+func TestTableDrivenQueryValidation(t *testing.T) {
+	storage := NewMockBasketMapStorage()
+	service := NewBasketMapLookupServiceWithStorage(storage)
+
+	// Store some test data
+	registryOp := "02operator1"
+	registration := BasketMapRegistration{
+		BasketID:         "test-basket",
+		Name:             "Test Basket",
+		RegistryOperator: registryOp,
+	}
+	err := storage.StoreRecord(context.Background(), "txid_test", 0, registration)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		query       map[string]interface{}
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "empty query",
+			query:       map[string]interface{}{},
+			expectError: true,
+			errorMsg:    "query parameters",
+		},
+		{
+			name:        "valid basketID query",
+			query:       map[string]interface{}{"basketID": "test-basket", "registryOperators": []string{registryOp}},
+			expectError: false,
+		},
+		{
+			name:        "valid name query",
+			query:       map[string]interface{}{"name": "Test", "registryOperators": []string{registryOp}},
+			expectError: false,
+		},
+		{
+			name:        "basketID without registryOperators",
+			query:       map[string]interface{}{"basketID": "test-basket"},
+			expectError: true,
+			errorMsg:    "query parameters",
+		},
+		{
+			name:        "name without registryOperators",
+			query:       map[string]interface{}{"name": "Test"},
+			expectError: true,
+			errorMsg:    "query parameters",
+		},
+		{
+			name:        "empty registryOperators array",
+			query:       map[string]interface{}{"basketID": "test-basket", "registryOperators": []string{}},
+			expectError: true,
+			errorMsg:    "query parameters",
+		},
+		{
+			name:        "non-existent basketID",
+			query:       map[string]interface{}{"basketID": "nonexistent", "registryOperators": []string{registryOp}},
+			expectError: false,
+		},
+		{
+			name:        "non-existent name",
+			query:       map[string]interface{}{"name": "Nonexistent", "registryOperators": []string{registryOp}},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queryJSON := testutil.MakeQuery(tt.query)
+
+			question := &lookup.LookupQuestion{
+				Service: "ls_basketmap",
+				Query:   queryJSON,
+			}
+
+			answer, err := service.Lookup(context.Background(), question)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+				assert.Nil(t, answer)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, answer)
+			}
+		})
+	}
+}
+
+// TestTableDrivenStorageOperations tests storage operations with table-driven tests
+func TestTableDrivenStorageOperations(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(storage *MockBasketMapStorage)
+		basketID   string
+		basketName string
+		operators  []string
+		wantCount  int
+		wantError  bool
+		searchBy   string // "id" or "name"
+	}{
+		{
+			name: "find by basketID - single match",
+			setup: func(storage *MockBasketMapStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0, BasketMapRegistration{
+					BasketID:         "basket1",
+					Name:             "First Basket",
+					RegistryOperator: "operator1",
+				})
+				_ = storage.StoreRecord(context.Background(), "txid2", 0, BasketMapRegistration{
+					BasketID:         "basket2",
+					Name:             "Second Basket",
+					RegistryOperator: "operator1",
+				})
+			},
+			basketID:  "basket1",
+			operators: []string{"operator1"},
+			wantCount: 1,
+			searchBy:  "id",
+		},
+		{
+			name: "find by basketID - multiple operators",
+			setup: func(storage *MockBasketMapStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0, BasketMapRegistration{
+					BasketID:         "basket1",
+					Name:             "First Basket",
+					RegistryOperator: "operator1",
+				})
+				_ = storage.StoreRecord(context.Background(), "txid2", 0, BasketMapRegistration{
+					BasketID:         "basket1",
+					Name:             "First Basket Alt",
+					RegistryOperator: "operator2",
+				})
+				_ = storage.StoreRecord(context.Background(), "txid3", 0, BasketMapRegistration{
+					BasketID:         "basket1",
+					Name:             "First Basket Third",
+					RegistryOperator: "operator3",
+				})
+			},
+			basketID:  "basket1",
+			operators: []string{"operator1", "operator2"},
+			wantCount: 2,
+			searchBy:  "id",
+		},
+		{
+			name: "find by name - fuzzy match",
+			setup: func(storage *MockBasketMapStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0, BasketMapRegistration{
+					BasketID:         "basket1",
+					Name:             "Payment Basket",
+					RegistryOperator: "operator1",
+				})
+				_ = storage.StoreRecord(context.Background(), "txid2", 0, BasketMapRegistration{
+					BasketID:         "basket2",
+					Name:             "Payments",
+					RegistryOperator: "operator1",
+				})
+				_ = storage.StoreRecord(context.Background(), "txid3", 0, BasketMapRegistration{
+					BasketID:         "basket3",
+					Name:             "Other",
+					RegistryOperator: "operator1",
+				})
+			},
+			basketName: "pay",
+			operators:  []string{"operator1"},
+			wantCount:  2,
+			searchBy:   "name",
+		},
+		{
+			name: "find by name - case insensitive",
+			setup: func(storage *MockBasketMapStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0, BasketMapRegistration{
+					BasketID:         "basket1",
+					Name:             "Test Basket",
+					RegistryOperator: "operator1",
+				})
+			},
+			basketName: "TEST",
+			operators:  []string{"operator1"},
+			wantCount:  1,
+			searchBy:   "name",
+		},
+		{
+			name: "no matches - wrong operator",
+			setup: func(storage *MockBasketMapStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0, BasketMapRegistration{
+					BasketID:         "basket1",
+					Name:             "Test Basket",
+					RegistryOperator: "operator1",
+				})
+			},
+			basketID:  "basket1",
+			operators: []string{"operator2"},
+			wantCount: 0,
+			searchBy:  "id",
+		},
+		{
+			name: "no matches - nonexistent basketID",
+			setup: func(storage *MockBasketMapStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0, BasketMapRegistration{
+					BasketID:         "basket1",
+					Name:             "Test Basket",
+					RegistryOperator: "operator1",
+				})
+			},
+			basketID:  "nonexistent",
+			operators: []string{"operator1"},
+			wantCount: 0,
+			searchBy:  "id",
+		},
+		{
+			name: "no matches - nonexistent name",
+			setup: func(storage *MockBasketMapStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0, BasketMapRegistration{
+					BasketID:         "basket1",
+					Name:             "Test Basket",
+					RegistryOperator: "operator1",
+				})
+			},
+			basketName: "nonexistent",
+			operators:  []string{"operator1"},
+			wantCount:  0,
+			searchBy:   "name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage := NewMockBasketMapStorage()
+			tt.setup(storage)
+
+			var results []UTXOReference
+			var err error
+
+			if tt.searchBy == "id" {
+				results, err = storage.FindByID(context.Background(), tt.basketID, tt.operators)
+			} else {
+				results, err = storage.FindByName(context.Background(), tt.basketName, tt.operators)
+			}
+
+			if tt.wantError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Len(t, results, tt.wantCount)
+			}
+		})
+	}
 }

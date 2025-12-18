@@ -13,72 +13,65 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockCertMapStorage is a mock implementation of CertMapStorageEngine for testing
+// MockCertMapStorage is a mock implementation of CertMapStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds CertMap-specific lookup logic.
 type MockCertMapStorage struct {
-	records     map[string]*CertMapRecord
-	storeError  error
-	deleteError error
-	findError   error
+	*testutil.MockStorageBase[CertMapRecord]
 }
 
 func NewMockCertMapStorage() *MockCertMapStorage {
 	return &MockCertMapStorage{
-		records: make(map[string]*CertMapRecord),
+		MockStorageBase: testutil.NewMockStorageBase[CertMapRecord](),
 	}
-}
-
-func (m *MockCertMapStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockCertMapStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, registration *CertMapRegistration) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = &CertMapRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, CertMapRecord{
 		Txid:         txid,
 		OutputIndex:  outputIndex,
 		Registration: registration,
-	}
-	return nil
+	})
 }
 
 func (m *MockCertMapStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockCertMapStorage) FindByType(ctx context.Context, certType string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Registration.Type == certType {
-			// Check if registry operator matches
-			for _, op := range registryOperators {
-				if record.Registration.RegistryOperator == op {
-					results = append(results, UTXOReference{
-						Txid:        record.Txid,
-						OutputIndex: record.OutputIndex,
-					})
-					break
-				}
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record CertMapRecord) bool {
+		if record.Registration.Type != certType {
+			return false
+		}
+		// Check if registry operator matches
+		for _, op := range registryOperators {
+			if record.Registration.RegistryOperator == op {
+				return true
 			}
+		}
+		return false
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 	return results, nil
 }
 
 func (m *MockCertMapStorage) FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
 	// Create fuzzy pattern like the real implementation
@@ -95,8 +88,8 @@ func (m *MockCertMapStorage) FindByName(ctx context.Context, name string, regist
 		return nil, err
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record CertMapRecord) bool {
 		// Check if registry operator matches
 		operatorMatches := false
 		for _, op := range registryOperators {
@@ -106,15 +99,19 @@ func (m *MockCertMapStorage) FindByName(ctx context.Context, name string, regist
 			}
 		}
 		if !operatorMatches {
-			continue
+			return false
 		}
 
 		// Check if name matches fuzzy pattern
-		if fuzzyRegex.MatchString(record.Registration.Name) {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+		return fuzzyRegex.MatchString(record.Registration.Name)
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 	return results, nil

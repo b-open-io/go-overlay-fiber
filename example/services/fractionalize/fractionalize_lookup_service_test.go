@@ -2,6 +2,7 @@ package fractionalize
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,58 +15,44 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockFractionalizeStorage is a mock implementation of FractionalizeStorageEngine for testing
+// MockFractionalizeStorage is a mock implementation of FractionalizeStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds Fractionalize-specific lookup logic.
 type MockFractionalizeStorage struct {
-	records      map[string]FractionalizeRecord
-	storeError   error
-	spendError   error
-	deleteError  error
+	*testutil.MockStorageBase[FractionalizeRecord]
+
+	// Error injection for service-specific operations
 	findError    error
 	findAllError error
 }
 
 func NewMockFractionalizeStorage() *MockFractionalizeStorage {
 	return &MockFractionalizeStorage{
-		records: make(map[string]FractionalizeRecord),
+		MockStorageBase: testutil.NewMockStorageBase[FractionalizeRecord](),
 	}
-}
-
-func (m *MockFractionalizeStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockFractionalizeStorage) StoreRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = FractionalizeRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, FractionalizeRecord{
 		Txid:        txid,
 		OutputIndex: outputIndex,
 		CreatedAt:   time.Now(),
-	}
-	return nil
+	})
 }
 
 func (m *MockFractionalizeStorage) SpendRecord(ctx context.Context, txid string, outputIndex int, spendingTxid string) error {
-	if m.spendError != nil {
-		return m.spendError
+	key := testutil.MakeKey(txid, outputIndex)
+	record, ok := m.Get(key)
+	if !ok {
+		return nil
 	}
-	key := m.makeKey(txid, outputIndex)
-	if record, exists := m.records[key]; exists {
-		record.SpendingTxid = spendingTxid
-		m.records[key] = record
-	}
-	return nil
+	record.SpendingTxid = spendingTxid
+	return m.Store(key, record)
 }
 
 func (m *MockFractionalizeStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockFractionalizeStorage) FindByTxid(ctx context.Context, txid string) (*UTXOReference, error) {
@@ -76,15 +63,18 @@ func (m *MockFractionalizeStorage) FindByTxid(ctx context.Context, txid string) 
 		return nil, nil
 	}
 
-	for _, record := range m.records {
-		if record.Txid == txid {
-			return &UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			}, nil
-		}
+	matches := m.Filter(func(record FractionalizeRecord) bool {
+		return record.Txid == txid
+	})
+
+	if len(matches) == 0 {
+		return nil, nil
 	}
-	return nil, nil
+
+	return &UTXOReference{
+		Txid:        matches[0].Txid,
+		OutputIndex: matches[0].OutputIndex,
+	}, nil
 }
 
 func (m *MockFractionalizeStorage) FindAll(ctx context.Context, limit, skip int, startDate, endDate *time.Time, sortOrder string) ([]UTXOReference, error) {
@@ -99,28 +89,33 @@ func (m *MockFractionalizeStorage) FindAll(ctx context.Context, limit, skip int,
 		skip = 0
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		// Apply date filters
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record FractionalizeRecord) bool {
 		if startDate != nil && record.CreatedAt.Before(*startDate) {
-			continue
+			return false
 		}
 		if endDate != nil && record.CreatedAt.After(*endDate) {
-			continue
+			return false
 		}
-		results = append(results, UTXOReference{
-			Txid:        record.Txid,
-			OutputIndex: record.OutputIndex,
-		})
-	}
+		return true
+	})
 
 	// Apply skip and limit
-	if skip >= len(results) {
+	if skip >= len(matches) {
 		return []UTXOReference{}, nil
 	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	matches = matches[skip:]
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
+	}
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		}
 	}
 
 	return results, nil
@@ -612,4 +607,249 @@ func TestFractionalizeLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)
 	require.NoError(t, err)
+}
+
+// TestTableDrivenQueryValidation tests various query scenarios using table-driven tests
+func TestTableDrivenQueryValidation(t *testing.T) {
+	storage := NewMockFractionalizeStorage()
+	service := NewFractionalizeLookupServiceWithStorage(storage)
+
+	// Store some test data
+	err := storage.StoreRecord(context.Background(), "txid_test", 0)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		query       map[string]interface{}
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "valid txid query",
+			query:       map[string]interface{}{"txid": "txid_test"},
+			expectError: false,
+		},
+		{
+			name:        "valid empty query - find all",
+			query:       map[string]interface{}{},
+			expectError: false,
+		},
+		{
+			name:        "valid limit query",
+			query:       map[string]interface{}{"limit": 10},
+			expectError: false,
+		},
+		{
+			name:        "valid skip query",
+			query:       map[string]interface{}{"skip": 5},
+			expectError: false,
+		},
+		{
+			name:        "valid sortOrder query",
+			query:       map[string]interface{}{"sortOrder": "asc"},
+			expectError: false,
+		},
+		{
+			name:        "valid date range query",
+			query:       map[string]interface{}{"startDate": "2025-01-01T00:00:00Z", "endDate": "2025-12-31T23:59:59Z"},
+			expectError: false,
+		},
+		{
+			name:        "negative limit",
+			query:       map[string]interface{}{"limit": -1},
+			expectError: true,
+			errorMsg:    "limit must be a non-negative number",
+		},
+		{
+			name:        "negative skip",
+			query:       map[string]interface{}{"skip": -1},
+			expectError: true,
+			errorMsg:    "skip must be a non-negative number",
+		},
+		{
+			name:        "invalid startDate format",
+			query:       map[string]interface{}{"startDate": "invalid-date"},
+			expectError: true,
+			errorMsg:    "invalid startDate format",
+		},
+		{
+			name:        "invalid endDate format",
+			query:       map[string]interface{}{"endDate": "not-a-date"},
+			expectError: true,
+			errorMsg:    "invalid endDate format",
+		},
+		{
+			name:        "non-existent txid",
+			query:       map[string]interface{}{"txid": "nonexistent_txid"},
+			expectError: false,
+		},
+		{
+			name:        "combined filters",
+			query:       map[string]interface{}{"limit": 10, "skip": 2, "sortOrder": "desc"},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queryJSON := testutil.MakeQuery(tt.query)
+
+			question := &lookup.LookupQuestion{
+				Service: "ls_fractionalize",
+				Query:   queryJSON,
+			}
+
+			answer, err := service.Lookup(context.Background(), question)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+				assert.Nil(t, answer)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, answer)
+			}
+		})
+	}
+}
+
+// TestTableDrivenStorageOperations tests storage operations with table-driven tests
+func TestTableDrivenStorageOperations(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(storage *MockFractionalizeStorage)
+		query     func() (*UTXOReference, []UTXOReference, error)
+		wantCount int
+		wantError bool
+	}{
+		{
+			name: "find by txid - single match",
+			setup: func(storage *MockFractionalizeStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0)
+				_ = storage.StoreRecord(context.Background(), "txid2", 0)
+			},
+			query: func() (*UTXOReference, []UTXOReference, error) {
+				storage := NewMockFractionalizeStorage()
+				_ = storage.StoreRecord(context.Background(), "txid1", 0)
+				_ = storage.StoreRecord(context.Background(), "txid2", 0)
+				result, err := storage.FindByTxid(context.Background(), "txid1")
+				if result != nil {
+					return result, nil, err
+				}
+				return nil, nil, err
+			},
+			wantCount: 1,
+		},
+		{
+			name: "find all - multiple matches",
+			setup: func(storage *MockFractionalizeStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0)
+				_ = storage.StoreRecord(context.Background(), "txid2", 0)
+				_ = storage.StoreRecord(context.Background(), "txid3", 0)
+			},
+			query: func() (*UTXOReference, []UTXOReference, error) {
+				storage := NewMockFractionalizeStorage()
+				_ = storage.StoreRecord(context.Background(), "txid1", 0)
+				_ = storage.StoreRecord(context.Background(), "txid2", 0)
+				_ = storage.StoreRecord(context.Background(), "txid3", 0)
+				results, err := storage.FindAll(context.Background(), 50, 0, nil, nil, "desc")
+				return nil, results, err
+			},
+			wantCount: 3,
+		},
+		{
+			name: "find all with limit",
+			setup: func(storage *MockFractionalizeStorage) {
+				for i := 0; i < 10; i++ {
+					_ = storage.StoreRecord(context.Background(), fmt.Sprintf("txid%d", i), 0)
+				}
+			},
+			query: func() (*UTXOReference, []UTXOReference, error) {
+				storage := NewMockFractionalizeStorage()
+				for i := 0; i < 10; i++ {
+					_ = storage.StoreRecord(context.Background(), fmt.Sprintf("txid%d", i), 0)
+				}
+				results, err := storage.FindAll(context.Background(), 5, 0, nil, nil, "desc")
+				return nil, results, err
+			},
+			wantCount: 5,
+		},
+		{
+			name: "find all with skip",
+			setup: func(storage *MockFractionalizeStorage) {
+				for i := 0; i < 10; i++ {
+					_ = storage.StoreRecord(context.Background(), fmt.Sprintf("txid%d", i), 0)
+				}
+			},
+			query: func() (*UTXOReference, []UTXOReference, error) {
+				storage := NewMockFractionalizeStorage()
+				for i := 0; i < 10; i++ {
+					_ = storage.StoreRecord(context.Background(), fmt.Sprintf("txid%d", i), 0)
+				}
+				results, err := storage.FindAll(context.Background(), 100, 5, nil, nil, "desc")
+				return nil, results, err
+			},
+			wantCount: 5,
+		},
+		{
+			name: "find all with date range",
+			setup: func(storage *MockFractionalizeStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0)
+			},
+			query: func() (*UTXOReference, []UTXOReference, error) {
+				storage := NewMockFractionalizeStorage()
+				_ = storage.StoreRecord(context.Background(), "txid1", 0)
+				now := time.Now()
+				yesterday := now.Add(-24 * time.Hour)
+				tomorrow := now.Add(24 * time.Hour)
+				results, err := storage.FindAll(context.Background(), 50, 0, &yesterday, &tomorrow, "desc")
+				return nil, results, err
+			},
+			wantCount: 1,
+		},
+		{
+			name: "find by txid - no match",
+			setup: func(storage *MockFractionalizeStorage) {
+				_ = storage.StoreRecord(context.Background(), "txid1", 0)
+			},
+			query: func() (*UTXOReference, []UTXOReference, error) {
+				storage := NewMockFractionalizeStorage()
+				_ = storage.StoreRecord(context.Background(), "txid1", 0)
+				result, err := storage.FindByTxid(context.Background(), "nonexistent")
+				return result, nil, err
+			},
+			wantCount: 0,
+		},
+		{
+			name:  "empty storage",
+			setup: func(storage *MockFractionalizeStorage) {},
+			query: func() (*UTXOReference, []UTXOReference, error) {
+				storage := NewMockFractionalizeStorage()
+				results, err := storage.FindAll(context.Background(), 50, 0, nil, nil, "desc")
+				return nil, results, err
+			},
+			wantCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			singleResult, listResults, err := tt.query()
+
+			if tt.wantError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				if singleResult != nil {
+					assert.Equal(t, 1, tt.wantCount)
+				} else if listResults != nil {
+					assert.Len(t, listResults, tt.wantCount)
+				} else {
+					assert.Equal(t, 0, tt.wantCount)
+				}
+			}
+		})
+	}
 }

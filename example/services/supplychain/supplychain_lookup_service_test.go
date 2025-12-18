@@ -14,59 +14,46 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockSupplyChainStorage is a mock implementation of SupplyChainStorageEngine for testing
+// MockSupplyChainStorage is a mock implementation of SupplyChainStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds SupplyChain-specific lookup logic.
 type MockSupplyChainStorage struct {
-	records      map[string]SupplyChainRecord
-	storeError   error
+	*testutil.MockStorageBase[SupplyChainRecord]
 	spendError   error
-	deleteError  error
 	findError    error
 	findAllError error
 }
 
 func NewMockSupplyChainStorage() *MockSupplyChainStorage {
 	return &MockSupplyChainStorage{
-		records: make(map[string]SupplyChainRecord),
+		MockStorageBase: testutil.NewMockStorageBase[SupplyChainRecord](),
 	}
-}
-
-func (m *MockSupplyChainStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockSupplyChainStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, offChainValues map[string]interface{}) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = SupplyChainRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, SupplyChainRecord{
 		Txid:           txid,
 		OutputIndex:    outputIndex,
 		OffChainValues: offChainValues,
 		CreatedAt:      time.Now(),
-	}
-	return nil
+	})
 }
 
 func (m *MockSupplyChainStorage) SpendRecord(ctx context.Context, txid string, outputIndex int, spendingTxid string) error {
 	if m.spendError != nil {
 		return m.spendError
 	}
-	key := m.makeKey(txid, outputIndex)
-	if record, ok := m.records[key]; ok {
+	key := testutil.MakeKey(txid, outputIndex)
+	if record, ok := m.Get(key); ok {
 		record.SpendingTxid = spendingTxid
-		m.records[key] = record
+		m.Store(key, record)
 	}
 	return nil
 }
 
 func (m *MockSupplyChainStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockSupplyChainStorage) FindByChainID(ctx context.Context, chainID string, limit, skip int) ([]UTXOReference, error) {
@@ -77,16 +64,23 @@ func (m *MockSupplyChainStorage) FindByChainID(ctx context.Context, chainID stri
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record SupplyChainRecord) bool {
 		if record.OffChainValues != nil {
 			if cid, ok := record.OffChainValues["chainId"].(string); ok && cid == chainID {
-				results = append(results, UTXOReference{
-					Txid:        record.Txid,
-					OutputIndex: record.OutputIndex,
-				})
+				return true
 			}
 		}
+		return false
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, 0, len(matches))
+	for _, record := range matches {
+		results = append(results, UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		})
 	}
 
 	// Apply skip and limit
@@ -109,14 +103,18 @@ func (m *MockSupplyChainStorage) FindByTxid(ctx context.Context, txid string, li
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Txid == txid {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record SupplyChainRecord) bool {
+		return record.Txid == txid
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, 0, len(matches))
+	for _, record := range matches {
+		results = append(results, UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		})
 	}
 
 	// Apply skip and limit
@@ -136,15 +134,21 @@ func (m *MockSupplyChainStorage) FindAll(ctx context.Context, limit, skip int, s
 		return nil, m.findAllError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record SupplyChainRecord) bool {
 		// Apply date filters
 		if startDate != nil && record.CreatedAt.Before(*startDate) {
-			continue
+			return false
 		}
 		if endDate != nil && record.CreatedAt.After(*endDate) {
-			continue
+			return false
 		}
+		return true
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, 0, len(matches))
+	for _, record := range matches {
 		results = append(results, UTXOReference{
 			Txid:        record.Txid,
 			OutputIndex: record.OutputIndex,

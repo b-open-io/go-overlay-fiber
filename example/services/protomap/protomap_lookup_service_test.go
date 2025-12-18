@@ -16,70 +16,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockProtoMapStorage is a mock implementation of ProtoMapStorageEngine for testing
+// MockProtoMapStorage is a mock implementation of ProtoMapStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds ProtoMap-specific lookup logic.
 type MockProtoMapStorage struct {
-	records     map[string]ProtoMapRecord
-	storeError  error
-	deleteError error
-	findError   error
+	*testutil.MockStorageBase[ProtoMapRecord]
 }
 
 func NewMockProtoMapStorage() *MockProtoMapStorage {
 	return &MockProtoMapStorage{
-		records: make(map[string]ProtoMapRecord),
+		MockStorageBase: testutil.NewMockStorageBase[ProtoMapRecord](),
 	}
-}
-
-func (m *MockProtoMapStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockProtoMapStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, registration ProtoMapRegistration) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = ProtoMapRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, ProtoMapRecord{
 		Txid:         txid,
 		OutputIndex:  outputIndex,
 		Registration: registration,
-	}
-	return nil
+	})
 }
 
 func (m *MockProtoMapStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockProtoMapStorage) FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	matches := m.Filter(func(record ProtoMapRecord) bool {
 		// Check if name matches
 		if record.Registration.Name != name {
-			continue
+			return false
 		}
 		// Check if registry operator is in the list
-		found := false
 		for _, op := range registryOperators {
 			if record.Registration.RegistryOperator == op {
-				found = true
-				break
+				return true
 			}
 		}
-		if found {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+		return false
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 
@@ -87,30 +73,30 @@ func (m *MockProtoMapStorage) FindByName(ctx context.Context, name string, regis
 }
 
 func (m *MockProtoMapStorage) FindByProtocolID(ctx context.Context, protocolID ProtocolID, registryOperators []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	matches := m.Filter(func(record ProtoMapRecord) bool {
 		// Check if protocolID matches
 		if record.Registration.ProtocolID.SecurityLevel != protocolID.SecurityLevel ||
 			record.Registration.ProtocolID.Protocol != protocolID.Protocol {
-			continue
+			return false
 		}
 		// Check if registry operator is in the list
-		found := false
 		for _, op := range registryOperators {
 			if record.Registration.RegistryOperator == op {
-				found = true
-				break
+				return true
 			}
 		}
-		if found {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+		return false
+	})
+
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
 

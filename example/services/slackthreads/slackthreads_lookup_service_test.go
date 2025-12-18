@@ -13,137 +13,124 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockSlackThreadsStorage is a mock implementation of SlackThreadsStorageEngine for testing
+// MockSlackThreadsStorage is a mock implementation of SlackThreadsStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds SlackThreads-specific lookup logic.
 type MockSlackThreadsStorage struct {
-	records      map[string]SlackThreadRecord
-	storeError   error
-	deleteError  error
-	findError    error
-	findAllError error
+	*testutil.MockStorageBase[SlackThreadRecord]
 }
 
 func NewMockSlackThreadsStorage() *MockSlackThreadsStorage {
 	return &MockSlackThreadsStorage{
-		records: make(map[string]SlackThreadRecord),
+		MockStorageBase: testutil.NewMockStorageBase[SlackThreadRecord](),
 	}
-}
-
-func (m *MockSlackThreadsStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + string(rune(outputIndex))
 }
 
 func (m *MockSlackThreadsStorage) StoreRecord(txid string, outputIndex int, threadHash string) error {
-	if m.storeError != nil {
-		return m.storeError
-	}
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = SlackThreadRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, SlackThreadRecord{
 		Txid:        txid,
 		OutputIndex: outputIndex,
 		ThreadHash:  threadHash,
 		CreatedAt:   time.Now(),
-	}
-	return nil
+	})
 }
 
 func (m *MockSlackThreadsStorage) DeleteRecord(txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockSlackThreadsStorage) FindByThreadHash(threadHash string, limit int, skip int, sortOrder string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if threadHash == "" {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.ThreadHash == threadHash {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
-	}
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record SlackThreadRecord) bool {
+		return record.ThreadHash == threadHash
+	})
 
 	// Apply skip and limit
-	if skip >= len(results) {
+	if skip >= len(matches) {
 		return []UTXOReference{}, nil
 	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	matches = matches[skip:]
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
 	}
 
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{Txid: record.Txid, OutputIndex: record.OutputIndex}
+	}
 	return results, nil
 }
 
 func (m *MockSlackThreadsStorage) FindByTxid(txid string, limit int, skip int, sortOrder string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if txid == "" {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if record.Txid == txid {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
-		}
-	}
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record SlackThreadRecord) bool {
+		return record.Txid == txid
+	})
 
 	// Apply skip and limit
-	if skip >= len(results) {
+	if skip >= len(matches) {
 		return []UTXOReference{}, nil
 	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	matches = matches[skip:]
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
 	}
 
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{Txid: record.Txid, OutputIndex: record.OutputIndex}
+	}
 	return results, nil
 }
 
 func (m *MockSlackThreadsStorage) FindAll(limit int, skip int, startDate *time.Time, endDate *time.Time, sortOrder string) ([]UTXOReference, error) {
-	if m.findAllError != nil {
-		return nil, m.findAllError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record SlackThreadRecord) bool {
 		// Apply date filters
 		if startDate != nil && record.CreatedAt.Before(*startDate) {
-			continue
+			return false
 		}
 		if endDate != nil && record.CreatedAt.After(*endDate) {
-			continue
+			return false
 		}
-		results = append(results, UTXOReference{
-			Txid:        record.Txid,
-			OutputIndex: record.OutputIndex,
-		})
-	}
+		return true
+	})
 
 	// Apply skip and limit
-	if skip >= len(results) {
+	if skip >= len(matches) {
 		return []UTXOReference{}, nil
 	}
-	results = results[skip:]
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	matches = matches[skip:]
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
 	}
 
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{Txid: record.Txid, OutputIndex: record.OutputIndex}
+	}
 	return results, nil
 }
 

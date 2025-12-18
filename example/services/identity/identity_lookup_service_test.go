@@ -2,7 +2,6 @@ package identity
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -18,27 +17,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockIdentityStorage is a mock implementation of IdentityStorageEngine for testing
+// MockIdentityStorage is a mock implementation of IdentityStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds Identity-specific lookup logic.
 type MockIdentityStorage struct {
-	records     map[string]*IdentityRecord
-	storeError  error
-	deleteError error
-	findError   error
+	*testutil.MockStorageBase[IdentityRecord]
 }
 
 func NewMockIdentityStorage() *MockIdentityStorage {
 	return &MockIdentityStorage{
-		records: make(map[string]*IdentityRecord),
+		MockStorageBase: testutil.NewMockStorageBase[IdentityRecord](),
 	}
 }
 
-func (m *MockIdentityStorage) makeKey(txid string, outputIndex int) string {
-	return fmt.Sprintf("%s:%d", txid, outputIndex)
-}
-
 func (m *MockIdentityStorage) StoreRecord(ctx context.Context, txid string, outputIndex int, certificate *certificates.Certificate) error {
-	if m.storeError != nil {
-		return m.storeError
+	if m.StoreError != nil {
+		return m.StoreError
 	}
 
 	// Build searchable attributes string from certificate fields
@@ -51,36 +44,34 @@ func (m *MockIdentityStorage) StoreRecord(ctx context.Context, txid string, outp
 		}
 	}
 
-	key := m.makeKey(txid, outputIndex)
-	m.records[key] = &IdentityRecord{
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Store(key, IdentityRecord{
 		Txid:                 txid,
 		OutputIndex:          outputIndex,
 		Certificate:          certificate,
 		CreatedAt:            time.Now(),
 		SearchableAttributes: strings.Join(searchableAttrs, " "),
-	}
-	return nil
+	})
 }
 
 func (m *MockIdentityStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
+	if m.DeleteError != nil {
+		return m.DeleteError
 	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockIdentityStorage) FindByAttribute(ctx context.Context, attributes IdentityAttributes, certifiers []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if len(attributes) == 0 {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record IdentityRecord) bool {
 		// Check if certifier matches
 		certifierMatch := false
 		certifierHex := record.Certificate.Certifier.ToDERHex()
@@ -91,125 +82,126 @@ func (m *MockIdentityStorage) FindByAttribute(ctx context.Context, attributes Id
 			}
 		}
 		if !certifierMatch {
-			continue
+			return false
 		}
 
 		// Handle "any" special case for full-text search
 		if anyValue, ok := attributes["any"]; ok {
-			if fuzzyMatch(record.SearchableAttributes, anyValue) {
-				results = append(results, UTXOReference{
-					Txid:        record.Txid,
-					OutputIndex: record.OutputIndex,
-				})
-			}
-		} else {
-			// Check specific attributes
-			allMatch := true
-			for key, value := range attributes {
-				if fieldValue, ok := record.Certificate.Fields[wallet.CertificateFieldNameUnder50Bytes(key)]; ok {
-					if !fuzzyMatch(string(fieldValue), value) {
-						allMatch = false
-						break
-					}
-				} else {
-					allMatch = false
-					break
+			return fuzzyMatch(record.SearchableAttributes, anyValue)
+		}
+
+		// Check specific attributes
+		for key, value := range attributes {
+			if fieldValue, ok := record.Certificate.Fields[wallet.CertificateFieldNameUnder50Bytes(key)]; ok {
+				if !fuzzyMatch(string(fieldValue), value) {
+					return false
 				}
-			}
-			if allMatch {
-				results = append(results, UTXOReference{
-					Txid:        record.Txid,
-					OutputIndex: record.OutputIndex,
-				})
+			} else {
+				return false
 			}
 		}
-	}
+		return true
+	})
 
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		}
+	}
 	return results, nil
 }
 
 func (m *MockIdentityStorage) FindByIdentityKey(ctx context.Context, identityKey string, certifiers []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if identityKey == "" {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record IdentityRecord) bool {
 		// Check subject match
 		if record.Certificate.Subject.ToDERHex() != identityKey {
-			continue
+			return false
 		}
 
 		// Check certifier match if provided
 		if len(certifiers) > 0 {
-			certifierMatch := false
 			certifierHex := record.Certificate.Certifier.ToDERHex()
 			for _, certifier := range certifiers {
 				if certifierHex == certifier {
-					certifierMatch = true
-					break
+					return true
 				}
 			}
-			if !certifierMatch {
-				continue
-			}
+			return false
 		}
 
-		results = append(results, UTXOReference{
+		return true
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
 			Txid:        record.Txid,
 			OutputIndex: record.OutputIndex,
-		})
+		}
 	}
-
 	return results, nil
 }
 
 func (m *MockIdentityStorage) FindByCertifier(ctx context.Context, certifiers []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if len(certifiers) == 0 {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record IdentityRecord) bool {
 		certifierHex := record.Certificate.Certifier.ToDERHex()
 		for _, certifier := range certifiers {
 			if certifierHex == certifier {
-				results = append(results, UTXOReference{
-					Txid:        record.Txid,
-					OutputIndex: record.OutputIndex,
-				})
-				break
+				return true
 			}
 		}
-	}
+		return false
+	})
 
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
+		}
+	}
 	return results, nil
 }
 
 func (m *MockIdentityStorage) FindByCertificateType(ctx context.Context, certificateTypes []string, identityKey string, certifiers []string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if len(certificateTypes) == 0 || identityKey == "" || len(certifiers) == 0 {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record IdentityRecord) bool {
 		// Check subject match
 		if record.Certificate.Subject.ToDERHex() != identityKey {
-			continue
+			return false
 		}
 
 		// Check certifier match
-		certifierMatch := false
 		certifierHex := record.Certificate.Certifier.ToDERHex()
+		certifierMatch := false
 		for _, certifier := range certifiers {
 			if certifierHex == certifier {
 				certifierMatch = true
@@ -217,49 +209,51 @@ func (m *MockIdentityStorage) FindByCertificateType(ctx context.Context, certifi
 			}
 		}
 		if !certifierMatch {
-			continue
+			return false
 		}
 
 		// Check type match
-		typeMatch := false
 		certType := string(record.Certificate.Type)
 		for _, certTypeStr := range certificateTypes {
 			if certType == certTypeStr {
-				typeMatch = true
-				break
+				return true
 			}
 		}
-		if !typeMatch {
-			continue
-		}
+		return false
+	})
 
-		results = append(results, UTXOReference{
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
 			Txid:        record.Txid,
 			OutputIndex: record.OutputIndex,
-		})
+		}
 	}
-
 	return results, nil
 }
 
 func (m *MockIdentityStorage) FindByCertificateSerialNumber(ctx context.Context, serialNumber string) ([]UTXOReference, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 	if serialNumber == "" {
 		return []UTXOReference{}, nil
 	}
 
-	var results []UTXOReference
-	for _, record := range m.records {
-		if string(record.Certificate.SerialNumber) == serialNumber {
-			results = append(results, UTXOReference{
-				Txid:        record.Txid,
-				OutputIndex: record.OutputIndex,
-			})
+	// Use Filter from base to find matching records
+	matches := m.Filter(func(record IdentityRecord) bool {
+		return string(record.Certificate.SerialNumber) == serialNumber
+	})
+
+	// Convert to UTXOReference slice
+	results := make([]UTXOReference, len(matches))
+	for i, record := range matches {
+		results[i] = UTXOReference{
+			Txid:        record.Txid,
+			OutputIndex: record.OutputIndex,
 		}
 	}
-
 	return results, nil
 }
 

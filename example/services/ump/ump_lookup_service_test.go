@@ -15,71 +15,58 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockUMPStorage is a mock implementation of UMPStorageEngine for testing
+// MockUMPStorage is a mock implementation of UMPStorageEngine for testing.
+// It embeds MockStorageBase for common functionality and adds UMP-specific lookup logic.
 type MockUMPStorage struct {
-	records         map[string]*UMPRecord
-	insertError     error
-	deleteError     error
-	findError       error
-	findByHashError error
+	*testutil.MockStorageBase[UMPRecord]
 }
 
 func NewMockUMPStorage() *MockUMPStorage {
 	return &MockUMPStorage{
-		records: make(map[string]*UMPRecord),
+		MockStorageBase: testutil.NewMockStorageBase[UMPRecord](),
 	}
-}
-
-func (m *MockUMPStorage) makeKey(txid string, outputIndex int) string {
-	return txid + ":" + strconv.Itoa(outputIndex)
 }
 
 func (m *MockUMPStorage) InsertRecord(ctx context.Context, record *UMPRecord) error {
-	if m.insertError != nil {
-		return m.insertError
-	}
-	key := m.makeKey(record.Txid, record.OutputIndex)
+	key := testutil.MakeKey(record.Txid, record.OutputIndex)
 	record.CreatedAt = time.Now()
-	m.records[key] = record
-	return nil
+	return m.Store(key, *record)
 }
 
 func (m *MockUMPStorage) DeleteRecord(ctx context.Context, txid string, outputIndex int) error {
-	if m.deleteError != nil {
-		return m.deleteError
-	}
-	key := m.makeKey(txid, outputIndex)
-	delete(m.records, key)
-	return nil
+	key := testutil.MakeKey(txid, outputIndex)
+	return m.Delete(key)
 }
 
 func (m *MockUMPStorage) FindByPresentationHash(ctx context.Context, presentationHash string) (*UMPRecord, error) {
-	if m.findByHashError != nil {
-		return nil, m.findByHashError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
-	for _, record := range m.records {
-		if record.PresentationHash == presentationHash {
-			return record, nil
-		}
+	matches := m.Filter(func(record UMPRecord) bool {
+		return record.PresentationHash == presentationHash
+	})
+	if len(matches) == 0 {
+		return nil, nil
 	}
-	return nil, nil
+	return &matches[0], nil
 }
 
 func (m *MockUMPStorage) FindByRecoveryHash(ctx context.Context, recoveryHash string) (*UMPRecord, error) {
-	if m.findByHashError != nil {
-		return nil, m.findByHashError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
-	for _, record := range m.records {
-		if record.RecoveryHash == recoveryHash {
-			return record, nil
-		}
+	matches := m.Filter(func(record UMPRecord) bool {
+		return record.RecoveryHash == recoveryHash
+	})
+	if len(matches) == 0 {
+		return nil, nil
 	}
-	return nil, nil
+	return &matches[0], nil
 }
 
 func (m *MockUMPStorage) FindByOutpoint(ctx context.Context, outpoint string) (*UMPRecord, error) {
-	if m.findError != nil {
-		return nil, m.findError
+	if m.LookupError != nil {
+		return nil, m.LookupError
 	}
 
 	// Parse outpoint string "txid.outputIndex"
@@ -93,12 +80,11 @@ func (m *MockUMPStorage) FindByOutpoint(ctx context.Context, outpoint string) (*
 		return nil, nil
 	}
 
-	key := m.makeKey(parts[0], outputIndex)
-	record, exists := m.records[key]
-	if !exists {
-		return nil, nil
+	key := testutil.MakeKey(parts[0], outputIndex)
+	if record, ok := m.Get(key); ok {
+		return &record, nil
 	}
-	return record, nil
+	return nil, nil
 }
 
 func TestUMPLookupService_NewInstance(t *testing.T) {
