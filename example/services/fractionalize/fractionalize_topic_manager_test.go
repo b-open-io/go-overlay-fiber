@@ -236,8 +236,6 @@ func TestFractionalizeTopicManager_IdentifyAdmissibleOutputs_InvalidServerToken(
 	tm := NewFractionalizeTopicManager()
 
 	// Create an invalid server token (has both OP_IF and OP_CHECKMULTISIG but wrong template)
-	// NOTE: Template validation is currently disabled, so this test just verifies
-	// that outputs with the right opcodes are admitted
 	invalidScript := &script.Script{}
 	_ = invalidScript.AppendOpcodes(script.OpIF)
 	_ = invalidScript.AppendPushData([]byte("wrong template"))
@@ -255,16 +253,14 @@ func TestFractionalizeTopicManager_IdentifyAdmissibleOutputs_InvalidServerToken(
 
 	instructions, err := tm.IdentifyAdmissibleOutputs(context.Background(), beef, nil)
 	require.NoError(t, err)
-	// With template validation disabled, this should be admitted
-	assert.Len(t, instructions.OutputsToAdmit, 1)
+	// With template validation enabled, this should NOT be admitted
+	assert.Empty(t, instructions.OutputsToAdmit)
 }
 
 func TestFractionalizeTopicManager_IdentifyAdmissibleOutputs_InvalidTransferToken(t *testing.T) {
 	tm := NewFractionalizeTopicManager()
 
 	// Create an invalid transfer token (has OP_IF but wrong template)
-	// NOTE: Template validation is currently disabled, so this test just verifies
-	// that outputs with the right opcodes are admitted
 	invalidScript := &script.Script{}
 	_ = invalidScript.AppendOpcodes(script.OpIF)
 	_ = invalidScript.AppendPushData([]byte("wrong template"))
@@ -282,16 +278,14 @@ func TestFractionalizeTopicManager_IdentifyAdmissibleOutputs_InvalidTransferToke
 
 	instructions, err := tm.IdentifyAdmissibleOutputs(context.Background(), beef, nil)
 	require.NoError(t, err)
-	// With template validation disabled, this should be admitted
-	assert.Len(t, instructions.OutputsToAdmit, 1)
+	// With template validation enabled, this should NOT be admitted
+	assert.Empty(t, instructions.OutputsToAdmit)
 }
 
 func TestFractionalizeTopicManager_IdentifyAdmissibleOutputs_InvalidPayment(t *testing.T) {
 	tm := NewFractionalizeTopicManager()
 
 	// Create an invalid payment (has OP_CHECKMULTISIG but wrong template)
-	// NOTE: Template validation is currently disabled, so this test just verifies
-	// that outputs with the right opcodes are admitted
 	invalidScript := &script.Script{}
 	_ = invalidScript.AppendPushData([]byte("wrong template"))
 	_ = invalidScript.AppendOpcodes(script.OpCHECKMULTISIG)
@@ -308,8 +302,8 @@ func TestFractionalizeTopicManager_IdentifyAdmissibleOutputs_InvalidPayment(t *t
 
 	instructions, err := tm.IdentifyAdmissibleOutputs(context.Background(), beef, nil)
 	require.NoError(t, err)
-	// With template validation disabled, this should be admitted
-	assert.Len(t, instructions.OutputsToAdmit, 1)
+	// With template validation enabled, this should NOT be admitted
+	assert.Empty(t, instructions.OutputsToAdmit)
 }
 
 func TestFractionalizeTopicManager_IdentifyAdmissibleOutputs_NilLockingScript(t *testing.T) {
@@ -365,47 +359,83 @@ func createFractionalizeTransactionWithInput(t *testing.T, output *transaction.T
 	return tx, nil
 }
 
-// createServerTokenScript creates a valid server token script
-// This creates a simple script with both OP_IF and OP_CHECKMULTISIG
+// createServerTokenScript creates a valid server token script that matches the template
+// Template expects: OP_0 OP_IF <3 bytes> OP_1 <18 bytes> OP_0 <36 bytes> OP_ENDIF
+// OP_2DUP OP_CAT OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_TOALTSTACK OP_TOALTSTACK
+// OP_1 OP_FROMALTSTACK OP_FROMALTSTACK OP_2 OP_CHECKMULTISIG OP_RETURN <32 bytes>
 func createServerTokenScript() (*script.Script, error) {
 	s := &script.Script{}
-	// Simple ordinal-like structure with OP_IF
+	// Ordinal inscription
 	_ = s.AppendOpcodes(script.OpFALSE)
 	_ = s.AppendOpcodes(script.OpIF)
-	_ = s.AppendPushData([]byte("ord"))
+	_ = s.AppendPushData([]byte("ord")) // 3 bytes
+	_ = s.AppendOpcodes(script.Op1)
+	_ = s.AppendPushData([]byte("application/bsv-20")) // 18 bytes
+	_ = s.AppendOpcodes(script.OpFALSE)
+	_ = s.AppendPushData([]byte(`{"p":"bsv-20","op":"mint","amt":"1"}`)) // 36 bytes
 	_ = s.AppendOpcodes(script.OpENDIF)
-	// Simple multisig structure
+	// 1-of-2 multisig locking script
+	_ = s.AppendOpcodes(script.Op2DUP)
+	_ = s.AppendOpcodes(script.OpCAT)
+	_ = s.AppendOpcodes(script.OpHASH160)
+	_ = s.AppendPushData(make([]byte, 20)) // 20 bytes hash160
+	_ = s.AppendOpcodes(script.OpEQUALVERIFY)
+	_ = s.AppendOpcodes(script.OpTOALTSTACK)
+	_ = s.AppendOpcodes(script.OpTOALTSTACK)
 	_ = s.AppendOpcodes(script.Op1)
-	_ = s.AppendOpcodes(script.Op1)
+	_ = s.AppendOpcodes(script.OpFROMALTSTACK)
+	_ = s.AppendOpcodes(script.OpFROMALTSTACK)
+	_ = s.AppendOpcodes(script.Op2)
 	_ = s.AppendOpcodes(script.OpCHECKMULTISIG)
+	// OP_RETURN with txid
+	_ = s.AppendOpcodes(script.OpRETURN)
+	_ = s.AppendPushData(make([]byte, 32)) // 32 bytes txid
 	return s, nil
 }
 
-// createTransferTokenScript creates a valid transfer token script
-// This creates a simple script with OP_IF but not OP_CHECKMULTISIG
+// createTransferTokenScript creates a valid transfer token script that matches the template
+// Template expects: OP_0 OP_IF <3 bytes> OP_1 <18 bytes> OP_0 <36 bytes> OP_ENDIF
+// OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG OP_RETURN <32 bytes>
 func createTransferTokenScript() (*script.Script, error) {
 	s := &script.Script{}
-	// Simple ordinal-like structure with OP_IF
+	// Ordinal inscription
 	_ = s.AppendOpcodes(script.OpFALSE)
 	_ = s.AppendOpcodes(script.OpIF)
-	_ = s.AppendPushData([]byte("ord"))
+	_ = s.AppendPushData([]byte("ord")) // 3 bytes
+	_ = s.AppendOpcodes(script.Op1)
+	_ = s.AppendPushData([]byte("application/bsv-20")) // 18 bytes
+	_ = s.AppendOpcodes(script.OpFALSE)
+	_ = s.AppendPushData([]byte(`{"p":"bsv-20","op":"mint","amt":"1"}`)) // 36 bytes
 	_ = s.AppendOpcodes(script.OpENDIF)
-	// P2PKH-like structure (no multisig)
+	// P2PKH locking script
 	_ = s.AppendOpcodes(script.OpDUP)
 	_ = s.AppendOpcodes(script.OpHASH160)
-	_ = s.AppendPushData(make([]byte, 20))
+	_ = s.AppendPushData(make([]byte, 20)) // 20 bytes pubkeyhash
 	_ = s.AppendOpcodes(script.OpEQUALVERIFY)
 	_ = s.AppendOpcodes(script.OpCHECKSIG)
+	// OP_RETURN with txid
+	_ = s.AppendOpcodes(script.OpRETURN)
+	_ = s.AppendPushData(make([]byte, 32)) // 32 bytes txid
 	return s, nil
 }
 
-// createPaymentScript creates a valid payment script
-// This creates a simple script with OP_CHECKMULTISIG but not OP_IF
+// createPaymentScript creates a valid payment script that matches the template
+// Template expects: OP_2DUP OP_CAT OP_HASH160 <20 bytes> OP_EQUALVERIFY
+// OP_TOALTSTACK OP_TOALTSTACK OP_1 OP_FROMALTSTACK OP_FROMALTSTACK OP_2 OP_CHECKMULTISIG
 func createPaymentScript() (*script.Script, error) {
 	s := &script.Script{}
-	// Simple multisig structure (no ordinal/OP_IF)
+	// 1-of-2 multisig locking script (no ordinal/OP_IF)
+	_ = s.AppendOpcodes(script.Op2DUP)
+	_ = s.AppendOpcodes(script.OpCAT)
+	_ = s.AppendOpcodes(script.OpHASH160)
+	_ = s.AppendPushData(make([]byte, 20)) // 20 bytes hash160
+	_ = s.AppendOpcodes(script.OpEQUALVERIFY)
+	_ = s.AppendOpcodes(script.OpTOALTSTACK)
+	_ = s.AppendOpcodes(script.OpTOALTSTACK)
 	_ = s.AppendOpcodes(script.Op1)
-	_ = s.AppendOpcodes(script.Op1)
+	_ = s.AppendOpcodes(script.OpFROMALTSTACK)
+	_ = s.AppendOpcodes(script.OpFROMALTSTACK)
+	_ = s.AppendOpcodes(script.Op2)
 	_ = s.AppendOpcodes(script.OpCHECKMULTISIG)
 	return s, nil
 }

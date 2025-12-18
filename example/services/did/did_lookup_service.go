@@ -172,7 +172,7 @@ func (ls *DIDLookupService) Lookup(ctx context.Context, question *lookup.LookupQ
 			return nil, err
 		}
 		return &lookup.LookupAnswer{
-			Type:   "output-list",
+			Type:   lookup.AnswerTypeOutputList,
 			Result: results,
 		}, nil
 	}
@@ -184,7 +184,7 @@ func (ls *DIDLookupService) Lookup(ctx context.Context, question *lookup.LookupQ
 			return nil, err
 		}
 		return &lookup.LookupAnswer{
-			Type:   "output-list",
+			Type:   lookup.AnswerTypeOutputList,
 			Result: results,
 		}, nil
 	}

@@ -173,7 +173,7 @@ func (ls *AnyLookupService) Lookup(ctx context.Context, question *lookup.LookupQ
 
 	// Return results as LookupAnswer
 	return &lookup.LookupAnswer{
-		Type:   "output-list",
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

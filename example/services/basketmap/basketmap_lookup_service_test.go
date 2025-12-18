@@ -187,7 +187,7 @@ func TestBasketMapLookupService_Lookup_ByBasketID(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -234,7 +234,7 @@ func TestBasketMapLookupService_Lookup_ByName(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -253,7 +253,7 @@ func TestBasketMapLookupService_Lookup_NoResults(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)

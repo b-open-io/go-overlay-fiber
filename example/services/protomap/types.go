@@ -31,7 +31,7 @@ type UTXOReference struct {
 
 // ProtoMapQuery represents query parameters for ProtoMap lookups
 type ProtoMapQuery struct {
-	Name              string       `json:"name,omitempty"`
-	RegistryOperators []string     `json:"registryOperators,omitempty"`
-	ProtocolID        *ProtocolID  `json:"protocolID,omitempty"`
+	Name              string      `json:"name,omitempty"`
+	RegistryOperators []string    `json:"registryOperators,omitempty"`
+	ProtocolID        *ProtocolID `json:"protocolID,omitempty"`
 }

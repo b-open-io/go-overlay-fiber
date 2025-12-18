@@ -137,7 +137,7 @@ func TestIdentityTopicManager_IdentifyAdmissibleOutputs_MissingRequiredFields(t 
 		certData map[string]interface{}
 	}{
 		{
-			name:     "missing type",
+			name: "missing type",
 			certData: map[string]interface{}{
 				"serialNumber": "serial123",
 				"subject":      privateKey.PubKey().Compressed(),
@@ -146,7 +146,7 @@ func TestIdentityTopicManager_IdentifyAdmissibleOutputs_MissingRequiredFields(t 
 			},
 		},
 		{
-			name:     "missing serial number",
+			name: "missing serial number",
 			certData: map[string]interface{}{
 				"type":      "identity",
 				"subject":   privateKey.PubKey().Compressed(),
@@ -155,7 +155,7 @@ func TestIdentityTopicManager_IdentifyAdmissibleOutputs_MissingRequiredFields(t 
 			},
 		},
 		{
-			name:     "missing subject",
+			name: "missing subject",
 			certData: map[string]interface{}{
 				"type":         "identity",
 				"serialNumber": "serial123",
@@ -164,7 +164,7 @@ func TestIdentityTopicManager_IdentifyAdmissibleOutputs_MissingRequiredFields(t 
 			},
 		},
 		{
-			name:     "missing certifier",
+			name: "missing certifier",
 			certData: map[string]interface{}{
 				"type":         "identity",
 				"serialNumber": "serial123",
@@ -173,7 +173,7 @@ func TestIdentityTopicManager_IdentifyAdmissibleOutputs_MissingRequiredFields(t 
 			},
 		},
 		{
-			name:     "missing fields",
+			name: "missing fields",
 			certData: map[string]interface{}{
 				"type":         "identity",
 				"serialNumber": "serial123",
@@ -182,7 +182,7 @@ func TestIdentityTopicManager_IdentifyAdmissibleOutputs_MissingRequiredFields(t 
 			},
 		},
 		{
-			name:     "empty fields",
+			name: "empty fields",
 			certData: map[string]interface{}{
 				"type":         "identity",
 				"serialNumber": "serial123",
@@ -319,8 +319,8 @@ func createValidIdentityTransaction(t *testing.T) (*transaction.Transaction, err
 	tx := transaction.NewTransaction()
 	fundingTxid := fundingTx.TxID()
 	tx.AddInput(&transaction.TransactionInput{
-		SourceTXID:       fundingTxid,
-		SourceTxOutIndex: 0,
+		SourceTXID:        fundingTxid,
+		SourceTxOutIndex:  0,
 		SourceTransaction: fundingTx,
 	})
 	tx.AddOutput(&transaction.TransactionOutput{
@@ -343,11 +343,11 @@ func createValidCertificateJSON(privateKey *ec.PrivateKey) ([]byte, error) {
 	verifiableCert := certificates.VerifiableCertificate{
 		Certificate: certificates.Certificate{
 			Type:         wallet.StringBase64("aWRlbnRpdHk="), // "identity" in base64
-			SerialNumber: wallet.StringBase64("c2VyaWFsMTIz"),  // "serial123" in base64
+			SerialNumber: wallet.StringBase64("c2VyaWFsMTIz"), // "serial123" in base64
 			Subject:      *subject,
 			Certifier:    *certifier,
 			Fields: map[wallet.CertificateFieldNameUnder50Bytes]wallet.StringBase64{
-				"name":  wallet.StringBase64("Sm9obiBEb2U="),           // "John Doe" in base64
+				"name":  wallet.StringBase64("Sm9obiBEb2U="),             // "John Doe" in base64
 				"email": wallet.StringBase64("am9obkBleGFtcGxlLmNvbQ=="), // "john@example.com" in base64
 			},
 		},

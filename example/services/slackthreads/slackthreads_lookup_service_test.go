@@ -147,7 +147,6 @@ func (m *MockSlackThreadsStorage) FindAll(limit int, skip int, startDate *time.T
 	return results, nil
 }
 
-
 func TestSlackThreadsLookupService_NewInstance(t *testing.T) {
 	storage := NewMockSlackThreadsStorage()
 	ls := NewSlackThreadsLookupServiceWithStorage(storage)
@@ -211,7 +210,7 @@ func TestSlackThreadsLookupService_Lookup_ByThreadHash(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -238,7 +237,7 @@ func TestSlackThreadsLookupService_Lookup_ByTxid(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -267,7 +266,7 @@ func TestSlackThreadsLookupService_Lookup_FindAll(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)

@@ -196,7 +196,7 @@ func TestHelloWorldLookupService_Lookup_ByMessage(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -221,7 +221,7 @@ func TestHelloWorldLookupService_Lookup_EmptyMessage(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerType("output-list"), answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 }
 
 func TestHelloWorldLookupService_Lookup_WithLimit(t *testing.T) {

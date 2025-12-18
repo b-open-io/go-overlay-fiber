@@ -263,7 +263,7 @@ func (ls *CertMapLookupService) Lookup(ctx context.Context, question *lookup.Loo
 	slog.Debug("CertMap lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   "output-list",
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

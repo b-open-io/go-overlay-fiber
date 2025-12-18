@@ -242,7 +242,7 @@ func (ls *BasketMapLookupService) Lookup(ctx context.Context, question *lookup.L
 	slog.Debug("BasketMap lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   "output-list",
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

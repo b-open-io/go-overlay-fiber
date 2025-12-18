@@ -245,7 +245,7 @@ func (ls *FractionalizeLookupService) Lookup(ctx context.Context, question *look
 	slog.Debug("Fractionalize lookup completed")
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerType("output-list"),
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

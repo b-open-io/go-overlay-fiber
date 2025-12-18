@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/template/pushdrop"
@@ -50,7 +50,7 @@ func TestUMPTopicManager_IdentifyAdmissibleOutputs_EmptyOutputs(t *testing.T) {
 	// Create a transaction with inputs but no outputs
 	tx := transaction.NewTransaction()
 	tx.AddInput(&transaction.TransactionInput{
-		SourceTXID: &chainhash.Hash{},
+		SourceTXID:       &chainhash.Hash{},
 		SourceTxOutIndex: 0,
 	})
 	addSourceTransaction(tx)
@@ -79,7 +79,7 @@ func TestUMPTopicManager_IdentifyAdmissibleOutputs_TooFewFields(t *testing.T) {
 	// Create a transaction with a PushDrop output that has too few fields (need at least 11)
 	tx := transaction.NewTransaction()
 	tx.AddInput(&transaction.TransactionInput{
-		SourceTXID: &chainhash.Hash{},
+		SourceTXID:       &chainhash.Hash{},
 		SourceTxOutIndex: 0,
 	})
 	addSourceTransaction(tx)
@@ -113,7 +113,7 @@ func TestUMPTopicManager_IdentifyAdmissibleOutputs_InvalidPresentationHashLength
 
 	tx := transaction.NewTransaction()
 	tx.AddInput(&transaction.TransactionInput{
-		SourceTXID: &chainhash.Hash{},
+		SourceTXID:       &chainhash.Hash{},
 		SourceTxOutIndex: 0,
 	})
 	addSourceTransaction(tx)
@@ -153,7 +153,7 @@ func TestUMPTopicManager_IdentifyAdmissibleOutputs_InvalidRecoveryHashLength(t *
 
 	tx := transaction.NewTransaction()
 	tx.AddInput(&transaction.TransactionInput{
-		SourceTXID: &chainhash.Hash{},
+		SourceTXID:       &chainhash.Hash{},
 		SourceTxOutIndex: 0,
 	})
 	addSourceTransaction(tx)
@@ -259,7 +259,7 @@ func TestUMPTopicManager_IdentifyAdmissibleOutputs_MultipleOutputs(t *testing.T)
 
 	tx := transaction.NewTransaction()
 	tx.AddInput(&transaction.TransactionInput{
-		SourceTXID: &chainhash.Hash{},
+		SourceTXID:       &chainhash.Hash{},
 		SourceTxOutIndex: 0,
 	})
 	addSourceTransaction(tx)
@@ -312,7 +312,7 @@ func TestUMPTopicManager_IdentifyAdmissibleOutputs_MultipleOutputs(t *testing.T)
 func createValidUMPTransaction(t *testing.T) (*transaction.Transaction, error) {
 	tx := transaction.NewTransaction()
 	tx.AddInput(&transaction.TransactionInput{
-		SourceTXID: &chainhash.Hash{},
+		SourceTXID:       &chainhash.Hash{},
 		SourceTxOutIndex: 0,
 	})
 	addSourceTransaction(tx)

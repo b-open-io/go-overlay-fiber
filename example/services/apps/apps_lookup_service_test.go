@@ -247,7 +247,7 @@ func TestAppsLookupService_Lookup_EmptyQuery(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -280,7 +280,7 @@ func TestAppsLookupService_Lookup_ByDomain(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -523,7 +523,7 @@ func TestAppsLookupService_Lookup_NoResults(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)

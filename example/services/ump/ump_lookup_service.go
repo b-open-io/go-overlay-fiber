@@ -200,7 +200,7 @@ func (ls *UMPLookupService) Lookup(ctx context.Context, question *lookup.LookupQ
 	// If no record found, return empty result
 	if record == nil {
 		return &lookup.LookupAnswer{
-			Type:   lookup.AnswerTypeFreeform,
+			Type:   lookup.AnswerTypeOutputList,
 			Result: []UTXOReference{},
 		}, nil
 	}
@@ -214,7 +214,7 @@ func (ls *UMPLookupService) Lookup(ctx context.Context, question *lookup.LookupQ
 	}
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerTypeOutputList,
 		Result: result,
 	}, nil
 }

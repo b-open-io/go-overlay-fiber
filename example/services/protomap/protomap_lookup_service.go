@@ -267,7 +267,7 @@ func (ls *ProtoMapLookupService) Lookup(ctx context.Context, question *lookup.Lo
 	slog.Debug("ProtoMap lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

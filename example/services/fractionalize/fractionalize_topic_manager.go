@@ -40,11 +40,12 @@ Outputs failing validation are ignored and **not** admitted.
 `
 
 // Script templates for validation (with zeroed-out hash values)
-// Note: The last data push should be 32 bytes (0x20) for the txid, but the original
-// TypeScript templates only have 20 bytes. Adding 12 more zeros to make it valid.
+// These templates match the TypeScript implementation exactly.
+// The blanking logic replaces all data with 20 zeros while preserving original push opcodes,
+// creating an "invalid" but comparable representation that matches these templates.
 const (
-	serverTokenTemplate   = "00630300000000000000000000000000000000000000005112000000000000000000000000000000000000000000240000000000000000000000000000000000000000686e7ea9140000000000000000000000000000000000000000886b6b516c6c52ae6a20000000000000000000000000000000000000000000000000000000000000000000"
-	transferTokenTemplate = "006303000000000000000000000000000000000000000051120000000000000000000000000000000000000000002400000000000000000000000000000000000000006876a914000000000000000000000000000000000000000088ac6a20000000000000000000000000000000000000000000000000000000000000000000"
+	serverTokenTemplate   = "00630300000000000000000000000000000000000000005112000000000000000000000000000000000000000000240000000000000000000000000000000000000000686e7ea9140000000000000000000000000000000000000000886b6b516c6c52ae6a200000000000000000000000000000000000000000"
+	transferTokenTemplate = "006303000000000000000000000000000000000000000051120000000000000000000000000000000000000000002400000000000000000000000000000000000000006876a914000000000000000000000000000000000000000088ac6a200000000000000000000000000000000000000000"
 	paymentTemplate       = "6e7ea9140000000000000000000000000000000000000000886b6b516c6c52ae"
 )
 
@@ -99,20 +100,28 @@ func (tm *FractionalizeTopicManager) IdentifyAdmissibleOutputs(
 
 		// If both true, this is an ordinal token mint or server change output
 		if hasOrdinal && hasMultiSig {
-			// TODO: Re-enable template validation when templates are fixed
-			// For now, just check for presence of opcodes
-			slog.Debug("Server token output admitted", "index", i)
-			outputsToAdmit = append(outputsToAdmit, outputIndex)
+			if checkScriptFormat(lockingScript, serverTokenTemplate) {
+				slog.Debug("Server token output admitted", "index", i)
+				outputsToAdmit = append(outputsToAdmit, outputIndex)
+			} else {
+				slog.Debug("Server token validation failed", "index", i)
+			}
 		} else if hasOrdinal && !hasMultiSig {
 			// If only ordinal is true, this is a token transfer to a user
-			// TODO: Re-enable template validation when templates are fixed
-			slog.Debug("Transfer token output admitted", "index", i)
-			outputsToAdmit = append(outputsToAdmit, outputIndex)
+			if checkScriptFormat(lockingScript, transferTokenTemplate) {
+				slog.Debug("Transfer token output admitted", "index", i)
+				outputsToAdmit = append(outputsToAdmit, outputIndex)
+			} else {
+				slog.Debug("Transfer token validation failed", "index", i)
+			}
 		} else if hasMultiSig && !hasOrdinal {
 			// If only multisig is true, this is a payment output
-			// TODO: Re-enable template validation when templates are fixed
-			slog.Debug("Payment output admitted", "index", i)
-			outputsToAdmit = append(outputsToAdmit, outputIndex)
+			if checkScriptFormat(lockingScript, paymentTemplate) {
+				slog.Debug("Payment output admitted", "index", i)
+				outputsToAdmit = append(outputsToAdmit, outputIndex)
+			} else {
+				slog.Debug("Payment validation failed", "index", i)
+			}
 		}
 	}
 

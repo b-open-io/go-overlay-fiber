@@ -121,7 +121,6 @@ func TestBasketMapTopicManager_IdentifyAdmissibleOutputs_WrongFieldCount(t *test
 	assert.Empty(t, instructions.OutputsToAdmit)
 }
 
-
 func TestBasketMapTopicManager_IdentifyAdmissibleOutputs_ValidToken(t *testing.T) {
 	tm := NewBasketMapTopicManager()
 
@@ -239,11 +238,11 @@ func createBasketMapTransactionWithInput(t *testing.T, output *transaction.Trans
 	// Create the main transaction that spends from the funding tx
 	tx := transaction.NewTransaction()
 	tx.AddInput(&transaction.TransactionInput{
-		SourceTXID:       fundingTx.TxID(),
-		SourceTxOutIndex: 0,
+		SourceTXID:        fundingTx.TxID(),
+		SourceTxOutIndex:  0,
 		SourceTransaction: fundingTx,
-		UnlockingScript:  &script.Script{},
-		SequenceNumber:   0xFFFFFFFF,
+		UnlockingScript:   &script.Script{},
+		SequenceNumber:    0xFFFFFFFF,
 	})
 
 	// Add the output if provided

@@ -101,7 +101,6 @@ func (m *MockUMPStorage) FindByOutpoint(ctx context.Context, outpoint string) (*
 	return record, nil
 }
 
-
 func TestUMPLookupService_NewInstance(t *testing.T) {
 	storage := NewMockUMPStorage()
 	ls := NewUMPLookupServiceWithStorage(storage)
@@ -172,7 +171,7 @@ func TestUMPLookupService_Lookup_ByPresentationHash(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -204,7 +203,7 @@ func TestUMPLookupService_Lookup_ByRecoveryHash(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -235,7 +234,7 @@ func TestUMPLookupService_Lookup_ByOutpoint(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -256,7 +255,7 @@ func TestUMPLookupService_Lookup_NoResults(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)

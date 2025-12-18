@@ -6,21 +6,21 @@ import (
 
 // PublishedAppMetadata represents on-chain App metadata held inside the PushDrop token's JSON payload
 type PublishedAppMetadata struct {
-	Version         string   `json:"version" bson:"version"`
-	Name            string   `json:"name" bson:"name"`
-	Description     string   `json:"description" bson:"description"`
-	Icon            string   `json:"icon" bson:"icon"`                       // URL or UHRP
-	HTTPURL         string   `json:"httpURL,omitempty" bson:"httpURL,omitempty"`
-	UHRPURL         string   `json:"uhrpURL,omitempty" bson:"uhrpURL,omitempty"`
-	Domain          string   `json:"domain" bson:"domain"`
-	Publisher       string   `json:"publisher" bson:"publisher"`             // identity key
-	ShortName       string   `json:"short_name,omitempty" bson:"short_name,omitempty"`
-	Category        string   `json:"category,omitempty" bson:"category,omitempty"`
-	Tags            []string `json:"tags,omitempty" bson:"tags,omitempty"`
-	ReleaseDate     string   `json:"release_date" bson:"release_date"`       // ISO-8601
-	Changelog       string   `json:"changelog,omitempty" bson:"changelog,omitempty"`
-	BannerImageURL  string   `json:"banner_image_url,omitempty" bson:"banner_image_url,omitempty"`
-	ScreenshotURLs  []string `json:"screenshot_urls,omitempty" bson:"screenshot_urls,omitempty"`
+	Version        string   `json:"version" bson:"version"`
+	Name           string   `json:"name" bson:"name"`
+	Description    string   `json:"description" bson:"description"`
+	Icon           string   `json:"icon" bson:"icon"` // URL or UHRP
+	HTTPURL        string   `json:"httpURL,omitempty" bson:"httpURL,omitempty"`
+	UHRPURL        string   `json:"uhrpURL,omitempty" bson:"uhrpURL,omitempty"`
+	Domain         string   `json:"domain" bson:"domain"`
+	Publisher      string   `json:"publisher" bson:"publisher"` // identity key
+	ShortName      string   `json:"short_name,omitempty" bson:"short_name,omitempty"`
+	Category       string   `json:"category,omitempty" bson:"category,omitempty"`
+	Tags           []string `json:"tags,omitempty" bson:"tags,omitempty"`
+	ReleaseDate    string   `json:"release_date" bson:"release_date"` // ISO-8601
+	Changelog      string   `json:"changelog,omitempty" bson:"changelog,omitempty"`
+	BannerImageURL string   `json:"banner_image_url,omitempty" bson:"banner_image_url,omitempty"`
+	ScreenshotURLs []string `json:"screenshot_urls,omitempty" bson:"screenshot_urls,omitempty"`
 }
 
 // AppCatalogRecord represents a MongoDB document stored in the "appsCatalogRecords" collection

@@ -9,10 +9,10 @@ type WalletConfigRegistration struct {
 	ConfigID         string `json:"configID" bson:"configID"`
 	Name             string `json:"name" bson:"name"`
 	Icon             string `json:"icon" bson:"icon"`
-	WAB              string `json:"wab" bson:"wab"`                     // Wallet Authentication Backend URL
-	Storage          string `json:"storage" bson:"storage"`             // Wallet storage URL
-	Messagebox       string `json:"messagebox" bson:"messagebox"`       // Messagebox URL
-	Legal            string `json:"legal" bson:"legal"`                 // Legal terms URL
+	WAB              string `json:"wab" bson:"wab"`               // Wallet Authentication Backend URL
+	Storage          string `json:"storage" bson:"storage"`       // Wallet storage URL
+	Messagebox       string `json:"messagebox" bson:"messagebox"` // Messagebox URL
+	Legal            string `json:"legal" bson:"legal"`           // Legal terms URL
 	RegistryOperator string `json:"registryOperator" bson:"registryOperator"`
 }
 

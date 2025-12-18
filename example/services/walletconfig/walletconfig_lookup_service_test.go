@@ -173,7 +173,6 @@ func (m *MockWalletConfigStorage) ListAll(ctx context.Context, registryOperators
 	return results, nil
 }
 
-
 func TestWalletConfigLookupService_NewInstance(t *testing.T) {
 	storage := NewMockWalletConfigStorage()
 	ls := NewWalletConfigLookupServiceWithStorage(storage)

@@ -267,7 +267,7 @@ func (ls *IdentityLookupService) Lookup(ctx context.Context, question *lookup.Lo
 		}
 		slog.Debug("Identity lookup by serial number", "resultCount", len(results))
 		return &lookup.LookupAnswer{
-			Type:   lookup.AnswerTypeFreeform,
+			Type:   lookup.AnswerTypeOutputList,
 			Result: results,
 		}, nil
 	}
@@ -300,7 +300,7 @@ func (ls *IdentityLookupService) Lookup(ctx context.Context, question *lookup.Lo
 	slog.Debug("Identity lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

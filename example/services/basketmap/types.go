@@ -4,10 +4,10 @@ import "time"
 
 // BasketMapRecord represents a basket type registration record in MongoDB
 type BasketMapRecord struct {
-	Txid         string                 `bson:"txid" json:"txid"`
-	OutputIndex  int                    `bson:"outputIndex" json:"outputIndex"`
-	Registration BasketMapRegistration  `bson:"registration" json:"registration"`
-	CreatedAt    time.Time              `bson:"createdAt" json:"createdAt"`
+	Txid         string                `bson:"txid" json:"txid"`
+	OutputIndex  int                   `bson:"outputIndex" json:"outputIndex"`
+	Registration BasketMapRegistration `bson:"registration" json:"registration"`
+	CreatedAt    time.Time             `bson:"createdAt" json:"createdAt"`
 }
 
 // BasketMapRegistration contains the basket registration details

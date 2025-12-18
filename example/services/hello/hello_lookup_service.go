@@ -215,7 +215,7 @@ func (ls *HelloWorldLookupService) Lookup(ctx context.Context, question *lookup.
 
 	// Return results as LookupAnswer
 	return &lookup.LookupAnswer{
-		Type:   "output-list",
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

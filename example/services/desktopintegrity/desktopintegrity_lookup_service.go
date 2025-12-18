@@ -278,7 +278,7 @@ func (ls *DesktopIntegrityLookupService) Lookup(ctx context.Context, question *l
 	slog.Debug("DesktopIntegrity lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerType("output-list"),
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

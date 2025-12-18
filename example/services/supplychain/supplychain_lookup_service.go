@@ -282,7 +282,7 @@ func (ls *SupplyChainLookupService) Lookup(ctx context.Context, question *lookup
 	slog.Debug("SupplyChain lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

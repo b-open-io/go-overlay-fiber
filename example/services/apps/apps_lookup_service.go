@@ -280,7 +280,7 @@ func (ls *AppsLookupService) Lookup(ctx context.Context, question *lookup.Lookup
 	slog.Debug("Apps lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

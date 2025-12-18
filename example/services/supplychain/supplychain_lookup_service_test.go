@@ -163,7 +163,6 @@ func (m *MockSupplyChainStorage) FindAll(ctx context.Context, limit, skip int, s
 	return results, nil
 }
 
-
 func TestSupplyChainLookupService_NewInstance(t *testing.T) {
 	storage := NewMockSupplyChainStorage()
 	ls := NewSupplyChainLookupServiceWithStorage(storage)
@@ -231,7 +230,7 @@ func TestSupplyChainLookupService_Lookup_ByChainID(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
@@ -339,7 +338,7 @@ func TestSupplyChainLookupService_Lookup_EmptyResults(t *testing.T) {
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
 	require.NotNil(t, answer)
-	assert.Equal(t, lookup.AnswerTypeFreeform, answer.Type)
+	assert.Equal(t, lookup.AnswerTypeOutputList, answer.Type)
 
 	results, ok := answer.Result.([]UTXOReference)
 	require.True(t, ok)
