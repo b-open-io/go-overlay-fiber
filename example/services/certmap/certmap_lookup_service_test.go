@@ -2,12 +2,11 @@ package certmap
 
 import (
 	"context"
-	"encoding/json"
 	"regexp"
 	"testing"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
@@ -121,22 +120,6 @@ func (m *MockCertMapStorage) FindByName(ctx context.Context, name string, regist
 	return results, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
-
 func TestCertMapLookupService_NewInstance(t *testing.T) {
 	storage := NewMockCertMapStorage()
 	ls := NewCertMapLookupServiceWithStorage(storage)
@@ -174,7 +157,7 @@ func TestCertMapLookupService_Lookup_EmptyQuery(t *testing.T) {
 	ls := NewCertMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -187,7 +170,7 @@ func TestCertMapLookupService_Lookup_MissingRegistryOperators(t *testing.T) {
 	ls := NewCertMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query:   makeQuery(map[string]interface{}{"type": "test-type"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"type": "test-type"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -200,7 +183,7 @@ func TestCertMapLookupService_Lookup_MissingTypeAndName(t *testing.T) {
 	ls := NewCertMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query:   makeQuery(map[string]interface{}{"registryOperators": []string{"operator1"}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"registryOperators": []string{"operator1"}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -228,7 +211,7 @@ func TestCertMapLookupService_Lookup_ByType(t *testing.T) {
 	// Lookup by type
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"type":              "test-type",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -277,7 +260,7 @@ func TestCertMapLookupService_Lookup_ByName(t *testing.T) {
 	// Lookup by name (fuzzy)
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"name":              "Certificate",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -323,7 +306,7 @@ func TestCertMapLookupService_Lookup_FilterByRegistryOperator(t *testing.T) {
 	// Lookup by type, filtering by registry operator
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"type":              "test-type",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -345,7 +328,7 @@ func TestCertMapLookupService_Lookup_NoResults(t *testing.T) {
 	// Lookup non-existent type
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"type":              "nonexistent",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -379,7 +362,7 @@ func TestCertMapLookupService_OutputSpent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -395,7 +378,7 @@ func TestCertMapLookupService_OutputSpent(t *testing.T) {
 	// Verify it's deleted - attempt to lookup by type
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"type":              "test-type",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -426,7 +409,7 @@ func TestCertMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -442,7 +425,7 @@ func TestCertMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	// Verify it still exists (was not deleted)
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"type":              "test-type",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -473,7 +456,7 @@ func TestCertMapLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -486,7 +469,7 @@ func TestCertMapLookupService_OutputEvicted(t *testing.T) {
 	// Verify it's deleted
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"type":              "test-type",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -517,7 +500,7 @@ func TestCertMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -530,7 +513,7 @@ func TestCertMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	// Verify it's deleted
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"type":              "test-type",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -561,7 +544,7 @@ func TestCertMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *test
 	require.NoError(t, err)
 
 	// Call with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -574,7 +557,7 @@ func TestCertMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *test
 	// Verify it still exists (was not deleted)
 	question := &lookup.LookupQuestion{
 		Service: "ls_certmap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"type":              "test-type",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -592,7 +575,7 @@ func TestCertMapLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	// This is a no-op for CertMap, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000003"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)

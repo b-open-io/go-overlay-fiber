@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/script"
@@ -117,21 +117,6 @@ func (m *MockProtoMapStorage) FindByProtocolID(ctx context.Context, protocolID P
 	return results, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
 
 func TestProtoMapLookupService_NewInstance(t *testing.T) {
 	storage := NewMockProtoMapStorage()
@@ -170,7 +155,7 @@ func TestProtoMapLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewProtoMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"name": "test"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"name": "test"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	// The current implementation doesn't check service name, so it won't error
@@ -189,7 +174,7 @@ func TestProtoMapLookupService_Lookup_EmptyQuery(t *testing.T) {
 	ls := NewProtoMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_protomap",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -218,7 +203,7 @@ func TestProtoMapLookupService_Lookup_ByName(t *testing.T) {
 	// Lookup by name
 	question := &lookup.LookupQuestion{
 		Service: "ls_protomap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"name":              testName,
 			"registryOperators": []string{registryOperator},
 		}),
@@ -255,7 +240,7 @@ func TestProtoMapLookupService_Lookup_ByProtocolID(t *testing.T) {
 	// Lookup by protocol ID
 	question := &lookup.LookupQuestion{
 		Service: "ls_protomap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"protocolID": map[string]interface{}{
 				"securityLevel": 2,
 				"protocol":      "my-protocol",
@@ -309,7 +294,7 @@ func TestProtoMapLookupService_Lookup_MultipleRegistryOperators(t *testing.T) {
 	// Lookup with only operator1 and operator2
 	question := &lookup.LookupQuestion{
 		Service: "ls_protomap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"name":              "Protocol A",
 			"registryOperators": []string{operator1, operator2},
 		}),
@@ -330,7 +315,7 @@ func TestProtoMapLookupService_Lookup_NoResults(t *testing.T) {
 	// Lookup non-existent protocol
 	question := &lookup.LookupQuestion{
 		Service: "ls_protomap",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"name":              "nonexistent",
 			"registryOperators": []string{"operator1"},
 		}),
@@ -435,7 +420,7 @@ func TestProtoMapLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -469,7 +454,7 @@ func TestProtoMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -503,7 +488,7 @@ func TestProtoMapLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -534,7 +519,7 @@ func TestProtoMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -565,7 +550,7 @@ func TestProtoMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *tes
 	require.NoError(t, err)
 
 	// Call with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -587,7 +572,7 @@ func TestProtoMapLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	// This is a no-op for ProtoMap, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000003"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)

@@ -2,14 +2,13 @@ package ump
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
@@ -102,21 +101,6 @@ func (m *MockUMPStorage) FindByOutpoint(ctx context.Context, outpoint string) (*
 	return record, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
 
 func TestUMPLookupService_NewInstance(t *testing.T) {
 	storage := NewMockUMPStorage()
@@ -157,7 +141,7 @@ func TestUMPLookupService_Lookup_EmptyQuery(t *testing.T) {
 	ls := NewUMPLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_ump",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -183,7 +167,7 @@ func TestUMPLookupService_Lookup_ByPresentationHash(t *testing.T) {
 	// Lookup by presentationHash
 	question := &lookup.LookupQuestion{
 		Service: "ls_ump",
-		Query:   makeQuery(map[string]interface{}{"presentationHash": testPresentationHash}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"presentationHash": testPresentationHash}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -215,7 +199,7 @@ func TestUMPLookupService_Lookup_ByRecoveryHash(t *testing.T) {
 	// Lookup by recoveryHash
 	question := &lookup.LookupQuestion{
 		Service: "ls_ump",
-		Query:   makeQuery(map[string]interface{}{"recoveryHash": testRecoveryHash}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"recoveryHash": testRecoveryHash}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -246,7 +230,7 @@ func TestUMPLookupService_Lookup_ByOutpoint(t *testing.T) {
 	// Lookup by outpoint
 	question := &lookup.LookupQuestion{
 		Service: "ls_ump",
-		Query:   makeQuery(map[string]interface{}{"outpoint": "txid789.2"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"outpoint": "txid789.2"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -267,7 +251,7 @@ func TestUMPLookupService_Lookup_NoResults(t *testing.T) {
 	// Lookup non-existent presentationHash
 	question := &lookup.LookupQuestion{
 		Service: "ls_ump",
-		Query:   makeQuery(map[string]interface{}{"presentationHash": "nonexistent1234567890abcdef1234567890abcdef1234567890abcdef1234"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"presentationHash": "nonexistent1234567890abcdef1234567890abcdef1234567890abcdef1234"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -357,7 +341,7 @@ func TestUMPLookupService_OutputSpent(t *testing.T) {
 	require.NotNil(t, result)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -392,7 +376,7 @@ func TestUMPLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -427,7 +411,7 @@ func TestUMPLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -459,7 +443,7 @@ func TestUMPLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Remove from history
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -491,7 +475,7 @@ func TestUMPLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *testing.
 	require.NoError(t, err)
 
 	// Try to remove from history with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -513,7 +497,7 @@ func TestUMPLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	// This is a no-op for UMP, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)

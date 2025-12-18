@@ -2,12 +2,11 @@ package walletconfig
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
@@ -77,7 +76,7 @@ func (m *MockWalletConfigStorage) FindByConfigID(ctx context.Context, configID s
 
 	var results []UTXOReference
 	for _, record := range m.records {
-		if record.Registration.ConfigID == configID && contains(registryOperators, record.Registration.RegistryOperator) {
+		if record.Registration.ConfigID == configID && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
 			results = append(results, UTXOReference{
 				Txid:        record.Txid,
 				OutputIndex: record.OutputIndex,
@@ -96,7 +95,7 @@ func (m *MockWalletConfigStorage) FindByName(ctx context.Context, name string, r
 	for _, record := range m.records {
 		// Simple case-insensitive substring match for testing
 		if strings.Contains(strings.ToLower(record.Registration.Name), strings.ToLower(name)) &&
-			contains(registryOperators, record.Registration.RegistryOperator) {
+			testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
 			results = append(results, UTXOReference{
 				Txid:        record.Txid,
 				OutputIndex: record.OutputIndex,
@@ -113,7 +112,7 @@ func (m *MockWalletConfigStorage) FindByWAB(ctx context.Context, wab string, reg
 
 	var results []UTXOReference
 	for _, record := range m.records {
-		if record.Registration.WAB == wab && contains(registryOperators, record.Registration.RegistryOperator) {
+		if record.Registration.WAB == wab && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
 			results = append(results, UTXOReference{
 				Txid:        record.Txid,
 				OutputIndex: record.OutputIndex,
@@ -130,7 +129,7 @@ func (m *MockWalletConfigStorage) FindByStorage(ctx context.Context, storage str
 
 	var results []UTXOReference
 	for _, record := range m.records {
-		if record.Registration.Storage == storage && contains(registryOperators, record.Registration.RegistryOperator) {
+		if record.Registration.Storage == storage && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
 			results = append(results, UTXOReference{
 				Txid:        record.Txid,
 				OutputIndex: record.OutputIndex,
@@ -147,7 +146,7 @@ func (m *MockWalletConfigStorage) FindByMessagebox(ctx context.Context, messageb
 
 	var results []UTXOReference
 	for _, record := range m.records {
-		if record.Registration.Messagebox == messagebox && contains(registryOperators, record.Registration.RegistryOperator) {
+		if record.Registration.Messagebox == messagebox && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
 			results = append(results, UTXOReference{
 				Txid:        record.Txid,
 				OutputIndex: record.OutputIndex,
@@ -164,7 +163,7 @@ func (m *MockWalletConfigStorage) ListAll(ctx context.Context, registryOperators
 
 	var results []UTXOReference
 	for _, record := range m.records {
-		if contains(registryOperators, record.Registration.RegistryOperator) {
+		if testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
 			results = append(results, UTXOReference{
 				Txid:        record.Txid,
 				OutputIndex: record.OutputIndex,
@@ -174,31 +173,6 @@ func (m *MockWalletConfigStorage) ListAll(ctx context.Context, registryOperators
 	return results, nil
 }
 
-// Helper function to check if a slice contains a string
-func contains(slice []string, str string) bool {
-	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-	return false
-}
-
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
 
 func TestWalletConfigLookupService_NewInstance(t *testing.T) {
 	storage := NewMockWalletConfigStorage()
@@ -238,7 +212,7 @@ func TestWalletConfigLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewWalletConfigLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"configID": "test", "registryOperators": []string{"operator1"}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"configID": "test", "registryOperators": []string{"operator1"}}),
 	}
 
 	// WalletConfig doesn't validate the service field, so this should work fine
@@ -259,7 +233,7 @@ func TestWalletConfigLookupService_Lookup_MissingRegistryOperators(t *testing.T)
 	ls := NewWalletConfigLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_walletconfig",
-		Query:   makeQuery(map[string]interface{}{"configID": "test"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"configID": "test"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -288,7 +262,7 @@ func TestWalletConfigLookupService_Lookup_ByConfigID(t *testing.T) {
 	// Lookup by configID
 	question := &lookup.LookupQuestion{
 		Service: "ls_walletconfig",
-		Query:   makeQuery(map[string]interface{}{"configID": "config123", "registryOperators": []string{"operator1"}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"configID": "config123", "registryOperators": []string{"operator1"}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -323,7 +297,7 @@ func TestWalletConfigLookupService_Lookup_ByName(t *testing.T) {
 	// Lookup by name (fuzzy search)
 	question := &lookup.LookupQuestion{
 		Service: "ls_walletconfig",
-		Query:   makeQuery(map[string]interface{}{"name": "Test", "registryOperators": []string{"operator2"}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"name": "Test", "registryOperators": []string{"operator2"}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -358,7 +332,7 @@ func TestWalletConfigLookupService_Lookup_ByWAB(t *testing.T) {
 	// Lookup by WAB
 	question := &lookup.LookupQuestion{
 		Service: "ls_walletconfig",
-		Query:   makeQuery(map[string]interface{}{"wab": "https://wab.test.com", "registryOperators": []string{"operator3"}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"wab": "https://wab.test.com", "registryOperators": []string{"operator3"}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -405,7 +379,7 @@ func TestWalletConfigLookupService_Lookup_ListAll(t *testing.T) {
 	// List all configs from operator4
 	question := &lookup.LookupQuestion{
 		Service: "ls_walletconfig",
-		Query:   makeQuery(map[string]interface{}{"registryOperators": []string{"operator4"}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"registryOperators": []string{"operator4"}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -442,7 +416,7 @@ func TestWalletConfigLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -481,7 +455,7 @@ func TestWalletConfigLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -520,7 +494,7 @@ func TestWalletConfigLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -556,7 +530,7 @@ func TestWalletConfigLookupService_OutputNoLongerRetainedInHistory(t *testing.T)
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -592,7 +566,7 @@ func TestWalletConfigLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t 
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -613,7 +587,7 @@ func TestWalletConfigLookupService_OutputBlockHeightUpdated(t *testing.T) {
 	ls := NewWalletConfigLookupServiceWithStorage(storage)
 
 	// OutputBlockHeightUpdated should not do anything for WalletConfig
-	txidHash := makeHashFromHex("3333333333333333333333333333333333333333333333333333333333333333")
+	txidHash := testutil.MakeHashFromHex("3333333333333333333333333333333333333333333333333333333333333333")
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 1)

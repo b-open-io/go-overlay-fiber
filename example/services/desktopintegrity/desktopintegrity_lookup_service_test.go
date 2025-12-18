@@ -2,12 +2,11 @@ package desktopintegrity
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
@@ -149,22 +148,6 @@ func (m *MockDesktopIntegrityStorage) FindAll(ctx context.Context, limit int, sk
 	return results, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
-
 func TestDesktopIntegrityLookupService_NewInstance(t *testing.T) {
 	storage := NewMockDesktopIntegrityStorage()
 	ls := NewDesktopIntegrityLookupServiceWithStorage(storage)
@@ -202,7 +185,7 @@ func TestDesktopIntegrityLookupService_Lookup_ByFileHash(t *testing.T) {
 	// Lookup by fileHash
 	question := &lookup.LookupQuestion{
 		Service: "ls_desktopintegrity",
-		Query:   makeQuery(map[string]interface{}{"fileHash": testFileHash}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"fileHash": testFileHash}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -228,7 +211,7 @@ func TestDesktopIntegrityLookupService_Lookup_ByTxid(t *testing.T) {
 	// Lookup by txid
 	question := &lookup.LookupQuestion{
 		Service: "ls_desktopintegrity",
-		Query:   makeQuery(map[string]interface{}{"txid": testTxid}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"txid": testTxid}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -253,7 +236,7 @@ func TestDesktopIntegrityLookupService_Lookup_EmptyQuery(t *testing.T) {
 	// Lookup with empty query should return all via FindAll
 	question := &lookup.LookupQuestion{
 		Service: "ls_desktopintegrity",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -278,7 +261,7 @@ func TestDesktopIntegrityLookupService_Lookup_WithLimit(t *testing.T) {
 	// Lookup with limit
 	question := &lookup.LookupQuestion{
 		Service: "ls_desktopintegrity",
-		Query:   makeQuery(map[string]interface{}{"fileHash": testFileHash, "limit": 2}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"fileHash": testFileHash, "limit": 2}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -295,7 +278,7 @@ func TestDesktopIntegrityLookupService_Lookup_InvalidLimit(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_desktopintegrity",
-		Query:   makeQuery(map[string]interface{}{"limit": -1}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"limit": -1}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -309,7 +292,7 @@ func TestDesktopIntegrityLookupService_Lookup_InvalidSkip(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_desktopintegrity",
-		Query:   makeQuery(map[string]interface{}{"skip": -1}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"skip": -1}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -323,7 +306,7 @@ func TestDesktopIntegrityLookupService_Lookup_InvalidStartDate(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_desktopintegrity",
-		Query:   makeQuery(map[string]interface{}{"startDate": "invalid-date"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"startDate": "invalid-date"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -337,7 +320,7 @@ func TestDesktopIntegrityLookupService_Lookup_InvalidEndDate(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_desktopintegrity",
-		Query:   makeQuery(map[string]interface{}{"endDate": "invalid-date"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"endDate": "invalid-date"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -360,7 +343,7 @@ func TestDesktopIntegrityLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -389,7 +372,7 @@ func TestDesktopIntegrityLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -418,7 +401,7 @@ func TestDesktopIntegrityLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -444,7 +427,7 @@ func TestDesktopIntegrityLookupService_OutputNoLongerRetainedInHistory(t *testin
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	outpoint := &transaction.Outpoint{
 		Txid:  *txidHash,
 		Index: 0,
@@ -463,7 +446,7 @@ func TestDesktopIntegrityLookupService_OutputBlockHeightUpdated(t *testing.T) {
 	ls := NewDesktopIntegrityLookupServiceWithStorage(storage)
 
 	// This should just return nil without doing anything
-	txidHash := makeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+	txidHash := testutil.MakeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 100, 0)
 	assert.NoError(t, err)
 }

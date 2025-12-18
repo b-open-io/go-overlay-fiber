@@ -3,11 +3,10 @@ package messagebox
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"testing"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -111,22 +110,6 @@ func (m *MockMessageBoxStorage) FindRecent(limit int) ([]UTXOReference, error) {
 	return results, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
-
 func TestMessageBoxLookupService_NewInstance(t *testing.T) {
 	storage := NewMockMessageBoxStorage()
 	ls := NewMessageBoxLookupServiceWithStorage(storage)
@@ -166,7 +149,7 @@ func TestMessageBoxLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewMessageBoxLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"identityKey": "test"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"identityKey": "test"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -179,7 +162,7 @@ func TestMessageBoxLookupService_Lookup_MissingIdentityKey(t *testing.T) {
 	ls := NewMessageBoxLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_messagebox",
-		Query:   makeQuery(map[string]interface{}{"host": "https://example.com"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"host": "https://example.com"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -203,7 +186,7 @@ func TestMessageBoxLookupService_Lookup_ByIdentityKey(t *testing.T) {
 	// Lookup by identity key
 	question := &lookup.LookupQuestion{
 		Service: "ls_messagebox",
-		Query:   makeQuery(map[string]interface{}{"identityKey": identityKeyHex}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"identityKey": identityKeyHex}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -237,7 +220,7 @@ func TestMessageBoxLookupService_Lookup_ByIdentityKeyAndHost(t *testing.T) {
 	// Lookup by identity key and specific host
 	question := &lookup.LookupQuestion{
 		Service: "ls_messagebox",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"identityKey": identityKeyHex,
 			"host":        host1,
 		}),
@@ -373,7 +356,7 @@ func TestMessageBoxLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -403,7 +386,7 @@ func TestMessageBoxLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -433,7 +416,7 @@ func TestMessageBoxLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -454,7 +437,7 @@ func TestMessageBoxLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	ls := NewMessageBoxLookupServiceWithStorage(storage)
 
 	// This function should not error
-	txidHash := makeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+	txidHash := testutil.MakeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
 	outpoint := &transaction.Outpoint{
 		Txid:  *txidHash,
 		Index: 0,
@@ -468,7 +451,7 @@ func TestMessageBoxLookupService_OutputBlockHeightUpdated(t *testing.T) {
 	ls := NewMessageBoxLookupServiceWithStorage(storage)
 
 	// This function should not error
-	txidHash := makeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+	txidHash := testutil.MakeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)
 	require.NoError(t, err)
 }

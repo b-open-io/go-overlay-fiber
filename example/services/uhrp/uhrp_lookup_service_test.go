@@ -2,14 +2,13 @@ package uhrp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
@@ -18,10 +17,10 @@ import (
 
 // MockUHRPStorage is a mock implementation of UHRPStorageEngine for testing
 type MockUHRPStorage struct {
-	records      map[string]UHRPRecord
-	storeError   error
-	deleteError  error
-	lookupError  error
+	records     map[string]UHRPRecord
+	storeError  error
+	deleteError error
+	lookupError error
 }
 
 func NewMockUHRPStorage() *MockUHRPStorage {
@@ -115,22 +114,6 @@ func (m *MockUHRPStorage) Lookup(query *UHRPQuery) ([]UTXOReference, error) {
 	return results, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
-
 func TestUHRPLookupService_NewInstance(t *testing.T) {
 	storage := NewMockUHRPStorage()
 	ls := NewUHRPLookupServiceWithStorage(storage)
@@ -169,7 +152,7 @@ func TestUHRPLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewUHRPLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"uhrpUrl": "uhrp://test"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"uhrpUrl": "uhrp://test"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -182,7 +165,7 @@ func TestUHRPLookupService_Lookup_EmptyQuery(t *testing.T) {
 	ls := NewUHRPLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_uhrp",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -202,7 +185,7 @@ func TestUHRPLookupService_Lookup_ByUHRPUrl(t *testing.T) {
 	// Lookup by UHRP URL
 	question := &lookup.LookupQuestion{
 		Service: "ls_uhrp",
-		Query:   makeQuery(map[string]interface{}{"uhrpUrl": testURL}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"uhrpUrl": testURL}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -227,7 +210,7 @@ func TestUHRPLookupService_Lookup_ByOutpoint(t *testing.T) {
 	// Lookup by outpoint
 	question := &lookup.LookupQuestion{
 		Service: "ls_uhrp",
-		Query:   makeQuery(map[string]interface{}{"outpoint": "txid456.2"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"outpoint": "txid456.2"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -257,7 +240,7 @@ func TestUHRPLookupService_Lookup_ByHostIdentityKey(t *testing.T) {
 	// Lookup by host identity key
 	question := &lookup.LookupQuestion{
 		Service: "ls_uhrp",
-		Query:   makeQuery(map[string]interface{}{"hostIdentityKey": hostKey}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"hostIdentityKey": hostKey}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -275,7 +258,7 @@ func TestUHRPLookupService_Lookup_NoResults(t *testing.T) {
 	// Lookup non-existent URL
 	question := &lookup.LookupQuestion{
 		Service: "ls_uhrp",
-		Query:   makeQuery(map[string]interface{}{"uhrpUrl": "uhrp://nonexistent"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"uhrpUrl": "uhrp://nonexistent"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -302,7 +285,7 @@ func TestUHRPLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -331,7 +314,7 @@ func TestUHRPLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -360,7 +343,7 @@ func TestUHRPLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -382,7 +365,7 @@ func TestUHRPLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 
 	// This is a no-op for UHRP, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000001"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -399,7 +382,7 @@ func TestUHRPLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	// This is a no-op for UHRP, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)

@@ -2,12 +2,11 @@ package fractionalize
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -127,22 +126,6 @@ func (m *MockFractionalizeStorage) FindAll(ctx context.Context, limit, skip int,
 	return results, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
-
 func TestFractionalizeLookupService_NewInstance(t *testing.T) {
 	storage := NewMockFractionalizeStorage()
 	ls := NewFractionalizeLookupServiceWithStorage(storage)
@@ -185,7 +168,7 @@ func TestFractionalizeLookupService_Lookup_WrongService(t *testing.T) {
 	// The Lookup method doesn't validate service name, so this should work but return empty results
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"txid": "test"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"txid": "test"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -211,7 +194,7 @@ func TestFractionalizeLookupService_Lookup_NegativeLimit(t *testing.T) {
 	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query:   makeQuery(map[string]interface{}{"limit": -1}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"limit": -1}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -224,7 +207,7 @@ func TestFractionalizeLookupService_Lookup_NegativeSkip(t *testing.T) {
 	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query:   makeQuery(map[string]interface{}{"skip": -1}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"skip": -1}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -237,7 +220,7 @@ func TestFractionalizeLookupService_Lookup_InvalidDateFormat(t *testing.T) {
 	ls := NewFractionalizeLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query:   makeQuery(map[string]interface{}{"startDate": "invalid-date"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"startDate": "invalid-date"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -257,7 +240,7 @@ func TestFractionalizeLookupService_Lookup_ByTxid(t *testing.T) {
 	// Lookup by txid
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query:   makeQuery(map[string]interface{}{"txid": testTxid}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"txid": testTxid}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -278,7 +261,7 @@ func TestFractionalizeLookupService_Lookup_ByTxid_NotFound(t *testing.T) {
 	// Lookup non-existent txid
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query:   makeQuery(map[string]interface{}{"txid": "nonexistent"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"txid": "nonexistent"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -305,7 +288,7 @@ func TestFractionalizeLookupService_Lookup_FindAll(t *testing.T) {
 	// Lookup all records
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -330,7 +313,7 @@ func TestFractionalizeLookupService_Lookup_WithLimit(t *testing.T) {
 	// Lookup with limit
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query:   makeQuery(map[string]interface{}{"limit": 5}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"limit": 5}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -354,7 +337,7 @@ func TestFractionalizeLookupService_Lookup_WithSkip(t *testing.T) {
 	// Lookup with skip
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query:   makeQuery(map[string]interface{}{"skip": 5, "limit": 100}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"skip": 5, "limit": 100}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -380,7 +363,7 @@ func TestFractionalizeLookupService_Lookup_WithDateRange(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"startDate": yesterday.Format(time.RFC3339),
 			"endDate":   tomorrow.Format(time.RFC3339),
 		}),
@@ -408,7 +391,7 @@ func TestFractionalizeLookupService_Lookup_WithSortOrder(t *testing.T) {
 	// Lookup with ascending sort order
 	question := &lookup.LookupQuestion{
 		Service: "ls_fractionalize",
-		Query:   makeQuery(map[string]interface{}{"sortOrder": "asc"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"sortOrder": "asc"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -489,9 +472,9 @@ func TestFractionalizeLookupService_OutputSpent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
-	spendingTxidHash := makeHashFromHex("fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321")
+	spendingTxidHash := testutil.MakeHashFromHex("fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321")
 	require.NotNil(t, spendingTxidHash)
 
 	payload := &engine.OutputSpent{
@@ -521,7 +504,7 @@ func TestFractionalizeLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -550,7 +533,7 @@ func TestFractionalizeLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -576,7 +559,7 @@ func TestFractionalizeLookupService_OutputNoLongerRetainedInHistory(t *testing.T
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -602,7 +585,7 @@ func TestFractionalizeLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -624,7 +607,7 @@ func TestFractionalizeLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	// This is a no-op for Fractionalize, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000001"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)

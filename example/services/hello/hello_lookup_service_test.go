@@ -2,12 +2,11 @@ package hello
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
@@ -16,11 +15,11 @@ import (
 
 // MockHelloWorldStorage is a mock implementation of HelloWorldStorageEngine for testing
 type MockHelloWorldStorage struct {
-	records       map[string]HelloWorldRecord
-	storeError    error
-	deleteError   error
-	findError     error
-	findAllError  error
+	records      map[string]HelloWorldRecord
+	storeError   error
+	deleteError  error
+	findError    error
+	findAllError error
 }
 
 func NewMockHelloWorldStorage() *MockHelloWorldStorage {
@@ -134,22 +133,6 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
-
 func TestHelloWorldLookupService_NewInstance(t *testing.T) {
 	storage := NewMockHelloWorldStorage()
 	ls := NewHelloWorldLookupServiceWithStorage(storage)
@@ -188,7 +171,7 @@ func TestHelloWorldLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewHelloWorldLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"message": "test"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"message": "test"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -208,7 +191,7 @@ func TestHelloWorldLookupService_Lookup_ByMessage(t *testing.T) {
 	// Lookup by message
 	question := &lookup.LookupQuestion{
 		Service: "ls_helloworld",
-		Query:   makeQuery(map[string]interface{}{"message": testMessage}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"message": testMessage}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -233,7 +216,7 @@ func TestHelloWorldLookupService_Lookup_EmptyMessage(t *testing.T) {
 	// Lookup with empty message should return all via FindAll
 	question := &lookup.LookupQuestion{
 		Service: "ls_helloworld",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -253,7 +236,7 @@ func TestHelloWorldLookupService_Lookup_WithLimit(t *testing.T) {
 	// Lookup with limit
 	question := &lookup.LookupQuestion{
 		Service: "ls_helloworld",
-		Query:   makeQuery(map[string]interface{}{"message": "Hello", "limit": 2}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"message": "Hello", "limit": 2}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -270,7 +253,7 @@ func TestHelloWorldLookupService_Lookup_InvalidLimit(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_helloworld",
-		Query:   makeQuery(map[string]interface{}{"limit": -1}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"limit": -1}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -284,7 +267,7 @@ func TestHelloWorldLookupService_Lookup_InvalidSkip(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_helloworld",
-		Query:   makeQuery(map[string]interface{}{"skip": -1}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"skip": -1}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -298,7 +281,7 @@ func TestHelloWorldLookupService_Lookup_InvalidStartDate(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_helloworld",
-		Query:   makeQuery(map[string]interface{}{"startDate": "invalid-date"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"startDate": "invalid-date"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -312,7 +295,7 @@ func TestHelloWorldLookupService_Lookup_InvalidEndDate(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_helloworld",
-		Query:   makeQuery(map[string]interface{}{"endDate": "invalid-date"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"endDate": "invalid-date"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -335,7 +318,7 @@ func TestHelloWorldLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -364,7 +347,7 @@ func TestHelloWorldLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -393,7 +376,7 @@ func TestHelloWorldLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -414,7 +397,7 @@ func TestHelloWorldLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	ls := NewHelloWorldLookupServiceWithStorage(storage)
 
 	// This should just return nil without doing anything
-	txidHash := makeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+	txidHash := testutil.MakeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
 	outpoint := &transaction.Outpoint{
 		Txid:  *txidHash,
 		Index: 0,
@@ -428,7 +411,7 @@ func TestHelloWorldLookupService_OutputBlockHeightUpdated(t *testing.T) {
 	ls := NewHelloWorldLookupServiceWithStorage(storage)
 
 	// This should just return nil without doing anything
-	txidHash := makeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+	txidHash := testutil.MakeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 100, 0)
 	assert.NoError(t, err)
 }

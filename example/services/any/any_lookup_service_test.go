@@ -2,11 +2,11 @@ package any
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -117,12 +117,6 @@ func (m *MockAnyStorage) FindAll(limit int, skip int, startDate *time.Time, endD
 	return results, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
 func TestAnyLookupService_NewInstance(t *testing.T) {
 	storage := NewMockAnyStorage()
 	ls := NewAnyLookupServiceWithStorage(storage)
@@ -161,7 +155,7 @@ func TestAnyLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewAnyLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"txid": "test"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"txid": "test"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -180,7 +174,7 @@ func TestAnyLookupService_Lookup_ByTxid(t *testing.T) {
 	// Lookup by txid
 	question := &lookup.LookupQuestion{
 		Service: "ls_anytx",
-		Query:   makeQuery(map[string]interface{}{"txid": "txid123"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"txid": "txid123"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -205,7 +199,7 @@ func TestAnyLookupService_Lookup_FindAll(t *testing.T) {
 	// Lookup without txid (findAll)
 	question := &lookup.LookupQuestion{
 		Service: "ls_anytx",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -223,7 +217,7 @@ func TestAnyLookupService_Lookup_InvalidLimit(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_anytx",
-		Query:   makeQuery(map[string]interface{}{"limit": -1}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"limit": -1}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -237,7 +231,7 @@ func TestAnyLookupService_Lookup_InvalidSkip(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_anytx",
-		Query:   makeQuery(map[string]interface{}{"skip": -1}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"skip": -1}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -251,7 +245,7 @@ func TestAnyLookupService_Lookup_InvalidStartDate(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_anytx",
-		Query:   makeQuery(map[string]interface{}{"startDate": "invalid-date"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"startDate": "invalid-date"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -265,7 +259,7 @@ func TestAnyLookupService_Lookup_InvalidEndDate(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_anytx",
-		Query:   makeQuery(map[string]interface{}{"endDate": "invalid-date"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"endDate": "invalid-date"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)

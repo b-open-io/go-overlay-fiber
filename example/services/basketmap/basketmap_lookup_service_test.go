@@ -2,13 +2,12 @@ package basketmap
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
@@ -63,7 +62,7 @@ func (m *MockBasketMapStorage) FindByID(ctx context.Context, basketID string, re
 
 	var results []UTXOReference
 	for _, record := range m.records {
-		if record.Registration.BasketID == basketID && contains(registryOperators, record.Registration.RegistryOperator) {
+		if record.Registration.BasketID == basketID && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
 			results = append(results, UTXOReference{
 				Txid:        record.Txid,
 				OutputIndex: record.OutputIndex,
@@ -81,7 +80,7 @@ func (m *MockBasketMapStorage) FindByName(ctx context.Context, name string, regi
 	var results []UTXOReference
 	for _, record := range m.records {
 		// Simple fuzzy matching: case-insensitive substring match
-		if fuzzyMatch(record.Registration.Name, name) && contains(registryOperators, record.Registration.RegistryOperator) {
+		if fuzzyMatch(record.Registration.Name, name) && testutil.Contains(registryOperators, record.Registration.RegistryOperator) {
 			results = append(results, UTXOReference{
 				Txid:        record.Txid,
 				OutputIndex: record.OutputIndex,
@@ -104,32 +103,6 @@ func fuzzyMatch(haystack, needle string) bool {
 		}
 	}
 	return needleIdx == len(needle)
-}
-
-// Helper function to check if slice contains string
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
 }
 
 func TestBasketMapLookupService_NewInstance(t *testing.T) {
@@ -170,7 +143,7 @@ func TestBasketMapLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewBasketMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"basketID": "test", "registryOperators": []string{"operator1"}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"basketID": "test", "registryOperators": []string{"operator1"}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.NoError(t, err)
@@ -183,7 +156,7 @@ func TestBasketMapLookupService_Lookup_EmptyQuery(t *testing.T) {
 	ls := NewBasketMapLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_basketmap",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -209,7 +182,7 @@ func TestBasketMapLookupService_Lookup_ByBasketID(t *testing.T) {
 	// Lookup by basket ID
 	question := &lookup.LookupQuestion{
 		Service: "ls_basketmap",
-		Query:   makeQuery(map[string]interface{}{"basketID": basketID, "registryOperators": []string{registryOp}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"basketID": basketID, "registryOperators": []string{registryOp}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -256,7 +229,7 @@ func TestBasketMapLookupService_Lookup_ByName(t *testing.T) {
 	// Lookup by name (fuzzy search)
 	question := &lookup.LookupQuestion{
 		Service: "ls_basketmap",
-		Query:   makeQuery(map[string]interface{}{"name": "pay", "registryOperators": []string{registryOp}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"name": "pay", "registryOperators": []string{registryOp}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -275,7 +248,7 @@ func TestBasketMapLookupService_Lookup_NoResults(t *testing.T) {
 	// Lookup non-existent basket
 	question := &lookup.LookupQuestion{
 		Service: "ls_basketmap",
-		Query:   makeQuery(map[string]interface{}{"basketID": "nonexistent", "registryOperators": []string{"operator1"}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"basketID": "nonexistent", "registryOperators": []string{"operator1"}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -307,7 +280,7 @@ func TestBasketMapLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -341,7 +314,7 @@ func TestBasketMapLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -375,7 +348,7 @@ func TestBasketMapLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -406,7 +379,7 @@ func TestBasketMapLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mark as no longer retained
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -437,7 +410,7 @@ func TestBasketMapLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *te
 	require.NoError(t, err)
 
 	// Try with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -459,7 +432,7 @@ func TestBasketMapLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	// This is a no-op for BasketMap, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000003"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)

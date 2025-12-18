@@ -2,12 +2,11 @@ package slackthreads
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
@@ -148,21 +147,6 @@ func (m *MockSlackThreadsStorage) FindAll(limit int, skip int, startDate *time.T
 	return results, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
 
 func TestSlackThreadsLookupService_NewInstance(t *testing.T) {
 	storage := NewMockSlackThreadsStorage()
@@ -202,7 +186,7 @@ func TestSlackThreadsLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewSlackThreadsLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"threadHash": "abcd"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"threadHash": "abcd"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -222,7 +206,7 @@ func TestSlackThreadsLookupService_Lookup_ByThreadHash(t *testing.T) {
 	// Lookup by thread hash
 	question := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{"threadHash": testThreadHash}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"threadHash": testThreadHash}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -249,7 +233,7 @@ func TestSlackThreadsLookupService_Lookup_ByTxid(t *testing.T) {
 	// Lookup by txid
 	question := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{"txid": testTxid}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"txid": testTxid}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -278,7 +262,7 @@ func TestSlackThreadsLookupService_Lookup_FindAll(t *testing.T) {
 	// Find all
 	question := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -307,7 +291,7 @@ func TestSlackThreadsLookupService_Lookup_WithLimitAndSkip(t *testing.T) {
 	// Test with limit
 	question := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{"limit": 2}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"limit": 2}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -318,7 +302,7 @@ func TestSlackThreadsLookupService_Lookup_WithLimitAndSkip(t *testing.T) {
 	// Test with skip
 	question2 := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{"limit": 10, "skip": 3}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"limit": 10, "skip": 3}),
 	}
 	answer2, err := ls.Lookup(context.Background(), question2)
 	require.NoError(t, err)
@@ -333,7 +317,7 @@ func TestSlackThreadsLookupService_Lookup_InvalidLimit(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{"limit": -1}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"limit": -1}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -347,7 +331,7 @@ func TestSlackThreadsLookupService_Lookup_InvalidSkip(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{"skip": -5}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"skip": -5}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -370,7 +354,7 @@ func TestSlackThreadsLookupService_Lookup_WithDateRange(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"startDate": startDate,
 			"endDate":   endDate,
 		}),
@@ -388,7 +372,7 @@ func TestSlackThreadsLookupService_Lookup_InvalidDateFormat(t *testing.T) {
 
 	question := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{"startDate": "invalid-date"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"startDate": "invalid-date"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -414,7 +398,7 @@ func TestSlackThreadsLookupService_Lookup_SortOrder(t *testing.T) {
 	// Test descending order (newest first) - mock doesn't actually sort, just test query works
 	question := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{"sortOrder": "desc"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"sortOrder": "desc"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -425,7 +409,7 @@ func TestSlackThreadsLookupService_Lookup_SortOrder(t *testing.T) {
 	// Test ascending order (oldest first)
 	question2 := &lookup.LookupQuestion{
 		Service: "ls_slackthread",
-		Query:   makeQuery(map[string]interface{}{"sortOrder": "asc"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"sortOrder": "asc"}),
 	}
 	answer2, err := ls.Lookup(context.Background(), question2)
 	require.NoError(t, err)
@@ -450,7 +434,7 @@ func TestSlackThreadsLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -480,7 +464,7 @@ func TestSlackThreadsLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -510,7 +494,7 @@ func TestSlackThreadsLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -531,7 +515,7 @@ func TestSlackThreadsLookupService_OutputNoLongerRetainedInHistory(t *testing.T)
 	ls := NewSlackThreadsLookupServiceWithStorage(storage)
 
 	// This should just return nil without doing anything
-	txidHash := makeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+	txidHash := testutil.MakeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
 	outpoint := &transaction.Outpoint{
 		Txid:  *txidHash,
 		Index: 0,
@@ -545,7 +529,7 @@ func TestSlackThreadsLookupService_OutputBlockHeightUpdated(t *testing.T) {
 	ls := NewSlackThreadsLookupServiceWithStorage(storage)
 
 	// This should just return nil without doing anything
-	txidHash := makeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+	txidHash := testutil.MakeHashFromHex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 100, 0)
 	assert.NoError(t, err)
 }

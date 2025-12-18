@@ -2,15 +2,14 @@ package identity
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/auth/certificates"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -289,22 +288,6 @@ func fuzzyMatch(text, pattern string) bool {
 	return true
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
-
 func TestIdentityLookupService_NewInstance(t *testing.T) {
 	storage := NewMockIdentityStorage()
 	ls := NewIdentityLookupServiceWithStorage(storage)
@@ -342,7 +325,7 @@ func TestIdentityLookupService_Lookup_EmptyQuery(t *testing.T) {
 	ls := NewIdentityLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -365,7 +348,7 @@ func TestIdentityLookupService_Lookup_BySerialNumber(t *testing.T) {
 	// Lookup by serial number
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": testSerial}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": testSerial}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -406,7 +389,7 @@ func TestIdentityLookupService_Lookup_ByCertifiers(t *testing.T) {
 	// Lookup by certifiers
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{"certifiers": []string{certifier}}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"certifiers": []string{certifier}}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -444,7 +427,7 @@ func TestIdentityLookupService_Lookup_ByIdentityKeyAndCertifiers(t *testing.T) {
 	// Lookup by identity key and certifiers
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"identityKey": identityKey,
 			"certifiers":  []string{certifier},
 		}),
@@ -475,7 +458,7 @@ func TestIdentityLookupService_Lookup_ByAttributesAndCertifiers(t *testing.T) {
 	// Lookup by attributes and certifiers
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query: makeQuery(map[string]interface{}{
+		Query: testutil.MakeQuery(map[string]interface{}{
 			"attributes": map[string]string{"name": "John"},
 			"certifiers": []string{certifier},
 		}),
@@ -497,7 +480,7 @@ func TestIdentityLookupService_Lookup_NoResults(t *testing.T) {
 	// Lookup non-existent serial number
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": "nonexistent"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": "nonexistent"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -522,7 +505,7 @@ func TestIdentityLookupService_OutputSpent(t *testing.T) {
 	// Verify it exists
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": "serial123"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": "serial123"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -530,7 +513,7 @@ func TestIdentityLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -561,7 +544,7 @@ func TestIdentityLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -577,7 +560,7 @@ func TestIdentityLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	// Verify it still exists (was not deleted)
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": "serial123"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": "serial123"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -596,7 +579,7 @@ func TestIdentityLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -609,7 +592,7 @@ func TestIdentityLookupService_OutputEvicted(t *testing.T) {
 	// Verify it's deleted
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": "serial123"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": "serial123"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -628,7 +611,7 @@ func TestIdentityLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mark as no longer retained
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -641,7 +624,7 @@ func TestIdentityLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 	// Verify it's deleted
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": "serial123"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": "serial123"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -660,7 +643,7 @@ func TestIdentityLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *tes
 	require.NoError(t, err)
 
 	// Try to mark as no longer retained with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -673,7 +656,7 @@ func TestIdentityLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *tes
 	// Verify it still exists (was not deleted)
 	question := &lookup.LookupQuestion{
 		Service: "ls_identity",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": "serial123"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": "serial123"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -687,7 +670,7 @@ func TestIdentityLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	// This is a no-op for Identity, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)

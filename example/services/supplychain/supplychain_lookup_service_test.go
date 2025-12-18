@@ -2,12 +2,11 @@ package supplychain
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -164,21 +163,6 @@ func (m *MockSupplyChainStorage) FindAll(ctx context.Context, limit, skip int, s
 	return results, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
 
 func TestSupplyChainLookupService_NewInstance(t *testing.T) {
 	storage := NewMockSupplyChainStorage()
@@ -218,7 +202,7 @@ func TestSupplyChainLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewSupplyChainLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"chainId": "test"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"chainId": "test"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -242,7 +226,7 @@ func TestSupplyChainLookupService_Lookup_ByChainID(t *testing.T) {
 	// Lookup by chainId
 	question := &lookup.LookupQuestion{
 		Service: "ls_supplychain",
-		Query:   makeQuery(map[string]interface{}{"chainId": chainID}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"chainId": chainID}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -277,7 +261,7 @@ func TestSupplyChainLookupService_Lookup_ByTxid(t *testing.T) {
 	// Lookup by txid
 	question := &lookup.LookupQuestion{
 		Service: "ls_supplychain",
-		Query:   makeQuery(map[string]interface{}{"txid": "txid456"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"txid": "txid456"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -305,7 +289,7 @@ func TestSupplyChainLookupService_Lookup_WithPagination(t *testing.T) {
 	// Lookup with limit and skip
 	question := &lookup.LookupQuestion{
 		Service: "ls_supplychain",
-		Query:   makeQuery(map[string]interface{}{"chainId": "test-chain", "limit": 5, "skip": 2}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"chainId": "test-chain", "limit": 5, "skip": 2}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -332,7 +316,7 @@ func TestSupplyChainLookupService_Lookup_WithDateRange(t *testing.T) {
 	endDate := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
 	question := &lookup.LookupQuestion{
 		Service: "ls_supplychain",
-		Query:   makeQuery(map[string]interface{}{"startDate": startDate, "endDate": endDate}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"startDate": startDate, "endDate": endDate}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -350,7 +334,7 @@ func TestSupplyChainLookupService_Lookup_EmptyResults(t *testing.T) {
 	// Lookup non-existent chainId
 	question := &lookup.LookupQuestion{
 		Service: "ls_supplychain",
-		Query:   makeQuery(map[string]interface{}{"chainId": "nonexistent"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"chainId": "nonexistent"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -402,7 +386,7 @@ func TestSupplyChainLookupService_Lookup_InvalidQuery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			question := &lookup.LookupQuestion{
 				Service: "ls_supplychain",
-				Query:   makeQuery(tt.query),
+				Query:   testutil.MakeQuery(tt.query),
 			}
 			answer, err := ls.Lookup(context.Background(), question)
 			if tt.wantErr {
@@ -556,9 +540,9 @@ func TestSupplyChainLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
-	spendingTxidHash := makeHashFromHex("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+	spendingTxidHash := testutil.MakeHashFromHex("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
 	require.NotNil(t, spendingTxidHash)
 
 	payload := &engine.OutputSpent{
@@ -588,9 +572,9 @@ func TestSupplyChainLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
-	spendingTxidHash := makeHashFromHex("1111111111111111111111111111111111111111111111111111111111111111")
+	spendingTxidHash := testutil.MakeHashFromHex("1111111111111111111111111111111111111111111111111111111111111111")
 
 	payload := &engine.OutputSpent{
 		Topic: "tm_other",
@@ -622,7 +606,7 @@ func TestSupplyChainLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -651,7 +635,7 @@ func TestSupplyChainLookupService_OutputNoLongerRetainedInHistory(t *testing.T) 
 	require.NoError(t, err)
 
 	// Call OutputNoLongerRetainedInHistory
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -680,7 +664,7 @@ func TestSupplyChainLookupService_OutputNoLongerRetainedInHistory_WrongTopic(t *
 	require.NoError(t, err)
 
 	// Call with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -702,7 +686,7 @@ func TestSupplyChainLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	// This is a no-op for SupplyChain, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)

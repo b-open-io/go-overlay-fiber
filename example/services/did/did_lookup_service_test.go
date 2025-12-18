@@ -2,14 +2,13 @@ package did
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bsv-blockchain/go-overlay-fiber/example/services/testutil"
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -107,22 +106,6 @@ func (m *MockDIDStorage) FindByOutpoint(outpoint string) ([]UTXOReference, error
 	return []UTXOReference{}, nil
 }
 
-// makeQuery creates a json.RawMessage from a map
-func makeQuery(m map[string]interface{}) json.RawMessage {
-	data, _ := json.Marshal(m)
-	return data
-}
-
-// makeHashFromHex creates a chainhash.Hash from a hex string, padding if necessary
-func makeHashFromHex(hexStr string) *chainhash.Hash {
-	// Pad to 64 characters (32 bytes)
-	for len(hexStr) < 64 {
-		hexStr = "0" + hexStr
-	}
-	hash, _ := chainhash.NewHashFromHex(hexStr)
-	return hash
-}
-
 func TestDIDLookupService_NewInstance(t *testing.T) {
 	storage := NewMockDIDStorage()
 	ls := NewDIDLookupServiceWithStorage(storage)
@@ -161,7 +144,7 @@ func TestDIDLookupService_Lookup_WrongService(t *testing.T) {
 	ls := NewDIDLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_wrong",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": "test"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": "test"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -174,7 +157,7 @@ func TestDIDLookupService_Lookup_EmptyQuery(t *testing.T) {
 	ls := NewDIDLookupServiceWithStorage(storage)
 	question := &lookup.LookupQuestion{
 		Service: "ls_did",
-		Query:   makeQuery(map[string]interface{}{}),
+		Query:   testutil.MakeQuery(map[string]interface{}{}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	assert.Error(t, err)
@@ -194,7 +177,7 @@ func TestDIDLookupService_Lookup_BySerialNumber(t *testing.T) {
 	// Lookup by serial number
 	question := &lookup.LookupQuestion{
 		Service: "ls_did",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": testSerialNumber}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": testSerialNumber}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -219,7 +202,7 @@ func TestDIDLookupService_Lookup_ByOutpoint(t *testing.T) {
 	// Lookup by outpoint
 	question := &lookup.LookupQuestion{
 		Service: "ls_did",
-		Query:   makeQuery(map[string]interface{}{"outpoint": "txid456.2"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"outpoint": "txid456.2"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -240,7 +223,7 @@ func TestDIDLookupService_Lookup_NoResults(t *testing.T) {
 	// Lookup non-existent serial number
 	question := &lookup.LookupQuestion{
 		Service: "ls_did",
-		Query:   makeQuery(map[string]interface{}{"serialNumber": "nonexistent"}),
+		Query:   testutil.MakeQuery(map[string]interface{}{"serialNumber": "nonexistent"}),
 	}
 	answer, err := ls.Lookup(context.Background(), question)
 	require.NoError(t, err)
@@ -364,7 +347,7 @@ func TestDIDLookupService_OutputSpent(t *testing.T) {
 	require.Len(t, results, 1)
 
 	// Mark as spent
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -393,7 +376,7 @@ func TestDIDLookupService_OutputSpent_WrongTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mark as spent with wrong topic
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	payload := &engine.OutputSpent{
@@ -422,7 +405,7 @@ func TestDIDLookupService_OutputEvicted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Evict the output
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -444,7 +427,7 @@ func TestDIDLookupService_OutputNoLongerRetainedInHistory(t *testing.T) {
 
 	// This is a no-op for DID, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000001"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	outpoint := &transaction.Outpoint{
@@ -461,7 +444,7 @@ func TestDIDLookupService_OutputBlockHeightUpdated(t *testing.T) {
 
 	// This is a no-op for DID, just verify it doesn't error
 	txidHex := "0000000000000000000000000000000000000000000000000000000000000002"
-	txidHash := makeHashFromHex(txidHex)
+	txidHash := testutil.MakeHashFromHex(txidHex)
 	require.NotNil(t, txidHash)
 
 	err := ls.OutputBlockHeightUpdated(context.Background(), txidHash, 12345, 0)
