@@ -59,13 +59,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 
 // UHRPLookupService implements a lookup service for the UHRP protocol
 type UHRPLookupService struct {
-	storage *UHRPStorage
+	storage UHRPStorageEngine
 }
 
 // NewUHRPLookupService creates a new UHRPLookupService instance
 func NewUHRPLookupService(db *mongo.Database) *UHRPLookupService {
 	return &UHRPLookupService{
 		storage: NewUHRPStorage(db),
+	}
+}
+
+// NewUHRPLookupServiceWithStorage creates a new UHRPLookupService with a custom storage engine
+func NewUHRPLookupServiceWithStorage(storage UHRPStorageEngine) *UHRPLookupService {
+	return &UHRPLookupService{
+		storage: storage,
 	}
 }
 
@@ -207,7 +214,7 @@ func (ls *UHRPLookupService) Lookup(ctx context.Context, question *lookup.Lookup
 
 	// Return results as LookupAnswer
 	return &lookup.LookupAnswer{
-		Type:   "output-list",
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

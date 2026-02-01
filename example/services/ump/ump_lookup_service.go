@@ -32,13 +32,20 @@ The lookup service returns the newest UMP token matching the query criteria.
 
 // UMPLookupService implements a lookup service for User Management Protocol
 type UMPLookupService struct {
-	storage *UMPStorage
+	storage UMPStorageEngine
 }
 
 // NewUMPLookupService creates a new UMPLookupService instance
 func NewUMPLookupService(db *mongo.Database) *UMPLookupService {
 	return &UMPLookupService{
 		storage: NewUMPStorage(db),
+	}
+}
+
+// NewUMPLookupServiceWithStorage creates a new UMPLookupService with a custom storage engine
+func NewUMPLookupServiceWithStorage(storage UMPStorageEngine) *UMPLookupService {
+	return &UMPLookupService{
+		storage: storage,
 	}
 }
 
@@ -162,6 +169,10 @@ func (ls *UMPLookupService) OutputBlockHeightUpdated(ctx context.Context, txid *
 
 // Lookup performs a lookup query
 func (ls *UMPLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	if question == nil {
+		return nil, fmt.Errorf("a valid query must be provided")
+	}
+
 	// Parse the query
 	var query UMPQuery
 	if err := json.Unmarshal(question.Query, &query); err != nil {
@@ -189,7 +200,7 @@ func (ls *UMPLookupService) Lookup(ctx context.Context, question *lookup.LookupQ
 	// If no record found, return empty result
 	if record == nil {
 		return &lookup.LookupAnswer{
-			Type:   lookup.AnswerTypeFreeform,
+			Type:   lookup.AnswerTypeOutputList,
 			Result: []UTXOReference{},
 		}, nil
 	}
@@ -203,7 +214,7 @@ func (ls *UMPLookupService) Lookup(ctx context.Context, question *lookup.LookupQ
 	}
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerTypeOutputList,
 		Result: result,
 	}, nil
 }

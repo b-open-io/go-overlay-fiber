@@ -66,13 +66,20 @@ Fuzzy name search allows partial matches, e.g., searching for "pay" will match "
 
 // BasketMapLookupService implements a lookup service for BasketMap registry
 type BasketMapLookupService struct {
-	storage *BasketMapStorage
+	storage BasketMapStorageEngine
 }
 
 // NewBasketMapLookupService creates a new BasketMapLookupService instance
 func NewBasketMapLookupService(db *mongo.Database) *BasketMapLookupService {
 	return &BasketMapLookupService{
 		storage: NewBasketMapStorage(db),
+	}
+}
+
+// NewBasketMapLookupServiceWithStorage creates a new BasketMapLookupService with a custom storage engine
+func NewBasketMapLookupServiceWithStorage(storage BasketMapStorageEngine) *BasketMapLookupService {
+	return &BasketMapLookupService{
+		storage: storage,
 	}
 }
 
@@ -201,6 +208,10 @@ func (ls *BasketMapLookupService) OutputBlockHeightUpdated(ctx context.Context, 
 
 // Lookup performs a lookup query
 func (ls *BasketMapLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	if question == nil {
+		return nil, fmt.Errorf("invalid query format: question cannot be nil")
+	}
+
 	// Parse the query
 	var query BasketMapQuery
 	if err := json.Unmarshal(question.Query, &query); err != nil {
@@ -231,7 +242,7 @@ func (ls *BasketMapLookupService) Lookup(ctx context.Context, question *lookup.L
 	slog.Debug("BasketMap lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

@@ -135,27 +135,28 @@ func (tm *ProtoMapTopicManager) IdentifyAdmissibleOutputs(
 		}
 
 		// Validate that required fields are not empty
-		if len(name) == 0 {
+		// Check for both zero-length and single-byte zero value (OP_0 encoding)
+		if len(name) == 0 || (len(name) == 1 && name[0] == 0) {
 			slog.Debug("Empty name", "index", i)
 			continue
 		}
-		if len(iconURL) == 0 {
+		if len(iconURL) == 0 || (len(iconURL) == 1 && iconURL[0] == 0) {
 			slog.Debug("Empty iconURL", "index", i)
 			continue
 		}
-		if len(description) == 0 {
+		if len(description) == 0 || (len(description) == 1 && description[0] == 0) {
 			slog.Debug("Empty description", "index", i)
 			continue
 		}
-		if len(documentationURL) == 0 {
+		if len(documentationURL) == 0 || (len(documentationURL) == 1 && documentationURL[0] == 0) {
 			slog.Debug("Empty documentationURL", "index", i)
 			continue
 		}
-		if len(registryOperator) == 0 {
+		if len(registryOperator) == 0 || (len(registryOperator) == 1 && registryOperator[0] == 0) {
 			slog.Debug("Empty registryOperator", "index", i)
 			continue
 		}
-		if len(signature) == 0 {
+		if len(signature) == 0 || (len(signature) == 1 && signature[0] == 0) {
 			slog.Debug("Empty signature", "index", i)
 			continue
 		}

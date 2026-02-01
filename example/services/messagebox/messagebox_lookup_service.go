@@ -82,13 +82,20 @@ Returns array of UTXO references (txid + outputIndex) ordered by recency.
 
 // MessageBoxLookupService implements a lookup service for the MessageBox protocol
 type MessageBoxLookupService struct {
-	storage *MessageBoxStorage
+	storage MessageBoxStorageEngine
 }
 
 // NewMessageBoxLookupService creates a new MessageBoxLookupService instance
 func NewMessageBoxLookupService(db *mongo.Database) *MessageBoxLookupService {
 	return &MessageBoxLookupService{
 		storage: NewMessageBoxStorage(db),
+	}
+}
+
+// NewMessageBoxLookupServiceWithStorage creates a new MessageBoxLookupService with a custom storage engine
+func NewMessageBoxLookupServiceWithStorage(storage MessageBoxStorageEngine) *MessageBoxLookupService {
+	return &MessageBoxLookupService{
+		storage: storage,
 	}
 }
 
@@ -210,7 +217,7 @@ func (ls *MessageBoxLookupService) Lookup(ctx context.Context, question *lookup.
 
 	// Return results as LookupAnswer
 	return &lookup.LookupAnswer{
-		Type:   "output-list",
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

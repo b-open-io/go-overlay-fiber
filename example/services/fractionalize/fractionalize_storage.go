@@ -10,10 +10,22 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// FractionalizeStorageEngine defines the interface for Fractionalize storage operations
+type FractionalizeStorageEngine interface {
+	StoreRecord(ctx context.Context, txid string, outputIndex int) error
+	SpendRecord(ctx context.Context, txid string, outputIndex int, spendingTxid string) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByTxid(ctx context.Context, txid string) (*UTXOReference, error)
+	FindAll(ctx context.Context, limit, skip int, startDate, endDate *time.Time, sortOrder string) ([]UTXOReference, error)
+}
+
 // FractionalizeStorage handles Fractionalize record storage in MongoDB
 type FractionalizeStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure FractionalizeStorage implements FractionalizeStorageEngine
+var _ FractionalizeStorageEngine = (*FractionalizeStorage)(nil)
 
 // NewFractionalizeStorage creates a new Fractionalize storage instance
 func NewFractionalizeStorage(db *mongo.Database) *FractionalizeStorage {
@@ -21,7 +33,7 @@ func NewFractionalizeStorage(db *mongo.Database) *FractionalizeStorage {
 
 	// Create index on txid for efficient lookups
 	indexModel := mongo.IndexModel{
-		Keys: bson.D{{Key: "txid", Value: 1}},
+		Keys:    bson.D{{Key: "txid", Value: 1}},
 		Options: options.Index().SetName("txidIndex"),
 	}
 	_, err := collection.Indexes().CreateOne(context.Background(), indexModel)

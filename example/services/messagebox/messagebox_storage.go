@@ -9,11 +9,23 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// MessageBoxStorageEngine defines the interface for MessageBox storage operations
+type MessageBoxStorageEngine interface {
+	StoreRecord(identityKey string, host string, txid string, outputIndex int) error
+	DeleteRecord(txid string, outputIndex int) error
+	FindAdvertisements(identityKey string, host string) ([]UTXOReference, error)
+	FindAll() ([]UTXOReference, error)
+	FindRecent(limit int) ([]UTXOReference, error)
+}
+
 // MessageBoxStorage implements a storage engine for the MessageBox lookup service
 type MessageBoxStorage struct {
-	db              *mongo.Database
-	adsCollection   *mongo.Collection
+	db            *mongo.Database
+	adsCollection *mongo.Collection
 }
+
+// Ensure MessageBoxStorage implements MessageBoxStorageEngine
+var _ MessageBoxStorageEngine = (*MessageBoxStorage)(nil)
 
 // NewMessageBoxStorage constructs a new MessageBoxStorage instance
 func NewMessageBoxStorage(db *mongo.Database) *MessageBoxStorage {

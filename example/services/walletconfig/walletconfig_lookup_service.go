@@ -70,13 +70,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 
 // WalletConfigLookupService implements a lookup service for WalletConfig registry
 type WalletConfigLookupService struct {
-	storage *WalletConfigStorage
+	storage WalletConfigStorageEngine
 }
 
 // NewWalletConfigLookupService creates a new WalletConfigLookupService instance
 func NewWalletConfigLookupService(db *mongo.Database) *WalletConfigLookupService {
 	return &WalletConfigLookupService{
 		storage: NewWalletConfigStorage(db),
+	}
+}
+
+// NewWalletConfigLookupServiceWithStorage creates a new WalletConfigLookupService with a custom storage engine
+func NewWalletConfigLookupServiceWithStorage(storage WalletConfigStorageEngine) *WalletConfigLookupService {
+	return &WalletConfigLookupService{
+		storage: storage,
 	}
 }
 
@@ -222,6 +229,10 @@ func (ls *WalletConfigLookupService) OutputBlockHeightUpdated(ctx context.Contex
 
 // Lookup performs a lookup query
 func (ls *WalletConfigLookupService) Lookup(ctx context.Context, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	if question == nil {
+		return nil, fmt.Errorf("a valid query must be provided")
+	}
+
 	slog.Debug("WalletConfig lookup", "query", string(question.Query))
 
 	// Parse the query
@@ -270,7 +281,7 @@ func (ls *WalletConfigLookupService) Lookup(ctx context.Context, question *looku
 	slog.Debug("WalletConfig lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

@@ -19,6 +19,6 @@ type UTXOReference struct {
 
 // MessageBoxQuery represents query parameters for looking up MessageBox advertisements
 type MessageBoxQuery struct {
-	IdentityKey string `json:"identityKey"`           // Required: hex-encoded public key
-	Host        string `json:"host,omitempty"`        // Optional: filter by specific host
+	IdentityKey string `json:"identityKey"`    // Required: hex-encoded public key
+	Host        string `json:"host,omitempty"` // Optional: filter by specific host
 }

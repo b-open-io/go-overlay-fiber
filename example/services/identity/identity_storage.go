@@ -13,10 +13,24 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// IdentityStorageEngine defines the interface for Identity storage operations
+type IdentityStorageEngine interface {
+	StoreRecord(ctx context.Context, txid string, outputIndex int, certificate *certificates.Certificate) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByAttribute(ctx context.Context, attributes IdentityAttributes, certifiers []string) ([]UTXOReference, error)
+	FindByIdentityKey(ctx context.Context, identityKey string, certifiers []string) ([]UTXOReference, error)
+	FindByCertifier(ctx context.Context, certifiers []string) ([]UTXOReference, error)
+	FindByCertificateType(ctx context.Context, certificateTypes []string, identityKey string, certifiers []string) ([]UTXOReference, error)
+	FindByCertificateSerialNumber(ctx context.Context, serialNumber string) ([]UTXOReference, error)
+}
+
 // IdentityStorage handles Identity record storage in MongoDB
 type IdentityStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure IdentityStorage implements IdentityStorageEngine
+var _ IdentityStorageEngine = (*IdentityStorage)(nil)
 
 // NewIdentityStorage creates a new Identity storage instance
 func NewIdentityStorage(db *mongo.Database) *IdentityStorage {
@@ -176,7 +190,7 @@ func (s *IdentityStorage) FindByCertificateSerialNumber(ctx context.Context, ser
 }
 
 // getFuzzyRegex converts a string into a regex pattern for fuzzy search
-// Matches the TypeScript implementation: input.split('').join('.*')
+// Matches the TypeScript implementation: input.split(”).join('.*')
 func getFuzzyRegex(input string) bson.M {
 	// Escape special regex characters
 	escaped := regexp.QuoteMeta(input)

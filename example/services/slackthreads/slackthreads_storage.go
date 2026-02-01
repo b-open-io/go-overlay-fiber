@@ -9,11 +9,23 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// SlackThreadsStorageEngine defines the interface for SlackThreads storage operations
+type SlackThreadsStorageEngine interface {
+	StoreRecord(txid string, outputIndex int, threadHash string) error
+	DeleteRecord(txid string, outputIndex int) error
+	FindByThreadHash(threadHash string, limit int, skip int, sortOrder string) ([]UTXOReference, error)
+	FindByTxid(txid string, limit int, skip int, sortOrder string) ([]UTXOReference, error)
+	FindAll(limit int, skip int, startDate *time.Time, endDate *time.Time, sortOrder string) ([]UTXOReference, error)
+}
+
 // SlackThreadsStorage implements a storage engine for the SlackThread lookup service
 type SlackThreadsStorage struct {
 	db      *mongo.Database
 	records *mongo.Collection
 }
+
+// Ensure SlackThreadsStorage implements SlackThreadsStorageEngine
+var _ SlackThreadsStorageEngine = (*SlackThreadsStorage)(nil)
 
 // NewSlackThreadsStorage constructs a new SlackThreadsStorage instance
 func NewSlackThreadsStorage(db *mongo.Database) *SlackThreadsStorage {

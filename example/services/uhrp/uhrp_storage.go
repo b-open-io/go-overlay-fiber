@@ -10,11 +10,21 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// UHRPStorageEngine defines the interface for UHRP storage operations
+type UHRPStorageEngine interface {
+	StoreRecord(uhrpUrl string, txid string, outputIndex int, hostIdentityKey string, hostedFileLocation string, expiryTime uint64, fileSize uint64) error
+	DeleteRecord(txid string, outputIndex int) error
+	Lookup(query *UHRPQuery) ([]UTXOReference, error)
+}
+
 // UHRPStorage implements a storage engine for the UHRP lookup service
 type UHRPStorage struct {
 	db      *mongo.Database
 	records *mongo.Collection
 }
+
+// Ensure UHRPStorage implements UHRPStorageEngine
+var _ UHRPStorageEngine = (*UHRPStorage)(nil)
 
 // NewUHRPStorage constructs a new UHRPStorage instance
 func NewUHRPStorage(db *mongo.Database) *UHRPStorage {

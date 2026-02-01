@@ -40,10 +40,13 @@ Outputs failing validation are ignored and **not** admitted.
 `
 
 // Script templates for validation (with zeroed-out hash values)
+// These templates match the TypeScript implementation exactly.
+// The blanking logic replaces all data with 20 zeros while preserving original push opcodes,
+// creating an "invalid" but comparable representation that matches these templates.
 const (
-	serverTokenTemplate  = "00630300000000000000000000000000000000000000005112000000000000000000000000000000000000000000240000000000000000000000000000000000000000686e7ea9140000000000000000000000000000000000000000886b6b516c6c52ae6a200000000000000000000000000000000000000000"
+	serverTokenTemplate   = "00630300000000000000000000000000000000000000005112000000000000000000000000000000000000000000240000000000000000000000000000000000000000686e7ea9140000000000000000000000000000000000000000886b6b516c6c52ae6a200000000000000000000000000000000000000000"
 	transferTokenTemplate = "006303000000000000000000000000000000000000000051120000000000000000000000000000000000000000002400000000000000000000000000000000000000006876a914000000000000000000000000000000000000000088ac6a200000000000000000000000000000000000000000"
-	paymentTemplate      = "6e7ea9140000000000000000000000000000000000000000886b6b516c6c52ae"
+	paymentTemplate       = "6e7ea9140000000000000000000000000000000000000000886b6b516c6c52ae"
 )
 
 // FractionalizeTopicManager implements a topic manager for Fractionalize protocol
@@ -160,24 +163,27 @@ func checkScriptFormat(s *script.Script, template string) bool {
 		return false
 	}
 
-	// Create a new script with blanked data
+	// Modify chunks to blank out variable data, matching TypeScript logic
+	// The TypeScript code does: chunk.data = Array(20).fill(0) for all data except [33]
+	for i := range chunks {
+		if chunks[i].Data != nil {
+			// Check if this is [33] which should be preserved
+			if len(chunks[i].Data) != 1 || chunks[i].Data[0] != 0x21 {
+				// Replace with 20 zero bytes
+				chunks[i].Data = make([]byte, 20)
+			}
+		}
+	}
+
+	// Rebuild the script from modified chunks, preserving original opcodes
 	blankedScript := &script.Script{}
 	for _, chunk := range chunks {
-		// Blank out data that is not exactly one byte with value 0x21 (33)
-		// This matches the TypeScript logic that preserves [33] but zeros out other data
 		if chunk.Data != nil {
-			if len(chunk.Data) != 1 || chunk.Data[0] != 0x21 {
-				// Zero out the data
-				blankedData := make([]byte, len(chunk.Data))
-				blankedScript.AppendOpcodes(chunk.Op)
-				blankedScript.AppendPushData(blankedData)
-			} else {
-				// Preserve [33]
-				blankedScript.AppendOpcodes(chunk.Op)
-				blankedScript.AppendPushData(chunk.Data)
-			}
+			// Manually add the opcode and data to preserve the original opcode
+			*blankedScript = append(*blankedScript, chunk.Op)
+			*blankedScript = append(*blankedScript, chunk.Data...)
 		} else {
-			blankedScript.AppendOpcodes(chunk.Op)
+			*blankedScript = append(*blankedScript, chunk.Op)
 		}
 	}
 

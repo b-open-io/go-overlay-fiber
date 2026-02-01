@@ -12,10 +12,22 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// UMPStorageEngine defines the interface for UMP storage operations
+type UMPStorageEngine interface {
+	InsertRecord(ctx context.Context, record *UMPRecord) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByPresentationHash(ctx context.Context, presentationHash string) (*UMPRecord, error)
+	FindByRecoveryHash(ctx context.Context, recoveryHash string) (*UMPRecord, error)
+	FindByOutpoint(ctx context.Context, outpoint string) (*UMPRecord, error)
+}
+
 // UMPStorage handles UMP record storage in MongoDB
 type UMPStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure UMPStorage implements UMPStorageEngine
+var _ UMPStorageEngine = (*UMPStorage)(nil)
 
 // NewUMPStorage creates a new UMP storage instance
 func NewUMPStorage(db *mongo.Database) *UMPStorage {

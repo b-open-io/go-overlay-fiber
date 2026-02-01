@@ -12,10 +12,26 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// AppsStorageEngine defines the interface for Apps storage operations
+type AppsStorageEngine interface {
+	StoreRecord(ctx context.Context, txid string, outputIndex int, metadata *PublishedAppMetadata) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByDomain(ctx context.Context, domain string, limit, skip int, sortOrder string) ([]UTXOReference, error)
+	FindByPublisher(ctx context.Context, publisher string, limit, skip int, sortOrder string) ([]UTXOReference, error)
+	FindByOutpoint(ctx context.Context, outpoint string) ([]UTXOReference, error)
+	FindByNameFuzzy(ctx context.Context, partialName string, limit, skip int, sortOrder string) ([]UTXOReference, error)
+	FindByTags(ctx context.Context, tags []string, limit, skip int, sortOrder string) ([]UTXOReference, error)
+	FindByCategory(ctx context.Context, category string, limit, skip int, sortOrder string) ([]UTXOReference, error)
+	FindAllApps(ctx context.Context, limit, skip int, sortOrder string) ([]UTXOReference, error)
+}
+
 // AppsStorage handles Apps catalog record storage in MongoDB
 type AppsStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure AppsStorage implements AppsStorageEngine
+var _ AppsStorageEngine = (*AppsStorage)(nil)
 
 // NewAppsStorage creates a new Apps storage instance
 func NewAppsStorage(db *mongo.Database) *AppsStorage {

@@ -10,10 +10,23 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// SupplyChainStorageEngine defines the interface for SupplyChain storage operations
+type SupplyChainStorageEngine interface {
+	StoreRecord(ctx context.Context, txid string, outputIndex int, offChainValues map[string]interface{}) error
+	SpendRecord(ctx context.Context, txid string, outputIndex int, spendingTxid string) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByChainID(ctx context.Context, chainID string, limit, skip int) ([]UTXOReference, error)
+	FindByTxid(ctx context.Context, txid string, limit, skip int, sortOrder string) ([]UTXOReference, error)
+	FindAll(ctx context.Context, limit, skip int, startDate, endDate *time.Time, sortOrder string) ([]UTXOReference, error)
+}
+
 // SupplyChainStorage handles SupplyChain record storage in MongoDB
 type SupplyChainStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure SupplyChainStorage implements SupplyChainStorageEngine
+var _ SupplyChainStorageEngine = (*SupplyChainStorage)(nil)
 
 // NewSupplyChainStorage creates a new SupplyChain storage instance
 func NewSupplyChainStorage(db *mongo.Database) *SupplyChainStorage {

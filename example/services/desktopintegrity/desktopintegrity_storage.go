@@ -9,10 +9,22 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// DesktopIntegrityStorageEngine defines the interface for DesktopIntegrity storage operations
+type DesktopIntegrityStorageEngine interface {
+	StoreRecord(ctx context.Context, txid string, outputIndex int, fileHash string, offChainValues []byte) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByFileHash(ctx context.Context, fileHash string, limit int, skip int, sortOrder string) ([]UTXOReference, error)
+	FindByTxid(ctx context.Context, txid string, limit int, skip int, sortOrder string) ([]UTXOReference, error)
+	FindAll(ctx context.Context, limit int, skip int, startDate *time.Time, endDate *time.Time, sortOrder string) ([]UTXOReference, error)
+}
+
 // DesktopIntegrityStorage implements storage for desktop integrity records
 type DesktopIntegrityStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure DesktopIntegrityStorage implements DesktopIntegrityStorageEngine
+var _ DesktopIntegrityStorageEngine = (*DesktopIntegrityStorage)(nil)
 
 // NewDesktopIntegrityStorage creates a new DesktopIntegrityStorage instance
 func NewDesktopIntegrityStorage(db *mongo.Database) *DesktopIntegrityStorage {

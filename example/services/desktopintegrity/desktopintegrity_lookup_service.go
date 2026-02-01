@@ -67,13 +67,20 @@ response, err := resolver.Query(ctx, &lookup.LookupQuestion{
 
 // DesktopIntegrityLookupService implements a lookup service for DesktopIntegrity protocol
 type DesktopIntegrityLookupService struct {
-	storage *DesktopIntegrityStorage
+	storage DesktopIntegrityStorageEngine
 }
 
 // NewDesktopIntegrityLookupService creates a new DesktopIntegrityLookupService instance
 func NewDesktopIntegrityLookupService(db *mongo.Database) *DesktopIntegrityLookupService {
 	return &DesktopIntegrityLookupService{
 		storage: NewDesktopIntegrityStorage(db),
+	}
+}
+
+// NewDesktopIntegrityLookupServiceWithStorage creates a new DesktopIntegrityLookupService with a custom storage engine
+func NewDesktopIntegrityLookupServiceWithStorage(storage DesktopIntegrityStorageEngine) *DesktopIntegrityLookupService {
+	return &DesktopIntegrityLookupService{
+		storage: storage,
 	}
 }
 
@@ -271,7 +278,7 @@ func (ls *DesktopIntegrityLookupService) Lookup(ctx context.Context, question *l
 	slog.Debug("DesktopIntegrity lookup completed", "resultCount", len(results))
 
 	return &lookup.LookupAnswer{
-		Type:   lookup.AnswerTypeFreeform,
+		Type:   lookup.AnswerTypeOutputList,
 		Result: results,
 	}, nil
 }

@@ -6,8 +6,8 @@ import (
 	"log/slog"
 
 	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/overlay"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/template/pushdrop"
 )
@@ -128,6 +128,11 @@ func (tm *MessageBoxTopicManager) validateOutput(output *transaction.Transaction
 		return fmt.Errorf("empty identityKey or host field")
 	}
 
+	// Check for fields that only contain null bytes (result of encoding empty []byte)
+	if isNullOrEmpty(identityKeyBuf) || isNullOrEmpty(hostBuf) {
+		return fmt.Errorf("identityKey or host contains only null bytes")
+	}
+
 	// Decode host as UTF-8
 	host := string(hostBuf)
 	if host == "" {
@@ -179,4 +184,15 @@ func (tm *MessageBoxTopicManager) GetMetaData() *overlay.MetaData {
 		Name:        "MessageBox Topic Manager",
 		Description: "Advertises and validates hosts for message routing.",
 	}
+}
+
+// isNullOrEmpty checks if a byte slice contains only null bytes or is effectively empty
+// This handles the case where an empty []byte is encoded as OP_0 and decoded as [0]
+func isNullOrEmpty(data []byte) bool {
+	for _, b := range data {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
 }

@@ -12,11 +12,22 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// DIDStorageEngine defines the interface for DID storage operations
+type DIDStorageEngine interface {
+	StoreRecord(txid string, outputIndex int, serialNumber string) error
+	DeleteRecord(txid string, outputIndex int) error
+	FindByCertificateSerialNumber(serialNumber string) ([]UTXOReference, error)
+	FindByOutpoint(outpoint string) ([]UTXOReference, error)
+}
+
 // DIDStorage implements a storage engine for the DID lookup service
 type DIDStorage struct {
 	db      *mongo.Database
 	records *mongo.Collection
 }
+
+// Ensure DIDStorage implements DIDStorageEngine
+var _ DIDStorageEngine = (*DIDStorage)(nil)
 
 // NewDIDStorage constructs a new DIDStorage instance
 func NewDIDStorage(db *mongo.Database) *DIDStorage {

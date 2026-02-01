@@ -9,11 +9,22 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// HelloWorldStorageEngine defines the interface for HelloWorld storage operations
+type HelloWorldStorageEngine interface {
+	StoreRecord(txid string, outputIndex int, message string) error
+	DeleteRecord(txid string, outputIndex int) error
+	FindByMessage(message string, limit int, skip int, sortOrder string) ([]UTXOReference, error)
+	FindAll(limit int, skip int, startDate *time.Time, endDate *time.Time, sortOrder string) ([]UTXOReference, error)
+}
+
 // HelloWorldStorage implements a storage engine for the HelloWorld lookup service
 type HelloWorldStorage struct {
 	db      *mongo.Database
 	records *mongo.Collection
 }
+
+// Ensure HelloWorldStorage implements HelloWorldStorageEngine
+var _ HelloWorldStorageEngine = (*HelloWorldStorage)(nil)
 
 // NewHelloWorldStorage constructs a new HelloWorldStorage instance
 func NewHelloWorldStorage(db *mongo.Database) *HelloWorldStorage {

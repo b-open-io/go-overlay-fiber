@@ -11,10 +11,25 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// WalletConfigStorageEngine defines the interface for WalletConfig storage operations
+type WalletConfigStorageEngine interface {
+	StoreRecord(ctx context.Context, txid string, outputIndex int, registration *WalletConfigRegistration) error
+	DeleteRecord(ctx context.Context, txid string, outputIndex int) error
+	FindByConfigID(ctx context.Context, configID string, registryOperators []string) ([]UTXOReference, error)
+	FindByName(ctx context.Context, name string, registryOperators []string) ([]UTXOReference, error)
+	FindByWAB(ctx context.Context, wab string, registryOperators []string) ([]UTXOReference, error)
+	FindByStorage(ctx context.Context, storage string, registryOperators []string) ([]UTXOReference, error)
+	FindByMessagebox(ctx context.Context, messagebox string, registryOperators []string) ([]UTXOReference, error)
+	ListAll(ctx context.Context, registryOperators []string) ([]UTXOReference, error)
+}
+
 // WalletConfigStorage handles WalletConfig record storage in MongoDB
 type WalletConfigStorage struct {
 	collection *mongo.Collection
 }
+
+// Ensure WalletConfigStorage implements WalletConfigStorageEngine
+var _ WalletConfigStorageEngine = (*WalletConfigStorage)(nil)
 
 // NewWalletConfigStorage creates a new WalletConfig storage instance
 func NewWalletConfigStorage(db *mongo.Database) *WalletConfigStorage {
